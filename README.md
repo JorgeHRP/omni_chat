@@ -52,7 +52,8 @@ nesta pasta, que ja vem com os valores reais usados nos testes).
 ```bash
 cd lead-sync-service
 docker build -t lead-sync-service .
-docker run --rm -p 8000:8000 --env-file .env -v $(pwd)/data:/app/data lead-sync-service
+docker run --rm -p 8000:80 --env-file .env -v $(pwd)/data:/app/data lead-sync-service
+# app fica em http://localhost:8000 (o container escuta na porta 80)
 ```
 
 ## Deploy no EasyPanel
@@ -68,14 +69,18 @@ docker run --rm -p 8000:8000 --env-file .env -v $(pwd)/data:/app/data lead-sync-
    historico de leads ja processados) some a cada redeploy e o servico
    recomeça do zero (janela de `INITIAL_LOOKBACK_HOURS` novamente, risco de
    reprocessar/duplicar).
-4. Porta exposta: `8000` (ja configurada no `EXPOSE` do Dockerfile e no
-   `CMD` do uvicorn).
+4. Porta exposta: `80` (no `EXPOSE` do Dockerfile e no bind do gunicorn).
+   Aponte o proxy do EasyPanel pra ela.
+5. **Nao aumente o numero de workers.** O `Dockerfile` roda gunicorn com
+   `-w 1` de proposito: o agendador (APScheduler) roda dentro do processo;
+   com 2+ workers cada um sobe um scheduler e o polling roda em duplicidade.
 
 ## Endpoints
 
 - `GET /health` - checagem simples.
 - `POST /poll/run` - dispara uma execucao na hora (nao precisa esperar o
-  agendador), util pra testar.
+  agendador), util pra testar. Se ja tiver uma execucao em andamento (agendada
+  ou manual), responde `{"skipped": "ja em execucao"}` e nao roda de novo.
 - `GET /poll/status` - ultimo estado: ate onde ja checou, total de leads
   processados, resumo da ultima execucao.
 - `GET /poll/runs?limit=20` - historico das execucoes (paginas buscadas,
@@ -83,7 +88,9 @@ docker run --rm -p 8000:8000 --env-file .env -v $(pwd)/data:/app/data lead-sync-
   erro se algum).
 - `GET /poll/leads?limit=50` - lista das conversas ja processadas e o que
   aconteceu com cada uma (`negociacao_criada`, `ja_tem_negociacao`,
-  `sem_telefone`).
+  `sem_telefone`, `erro`). Uma conversa marcada como `erro` (falha ao consultar
+  ou criar no RD CRM) nao e retentada automaticamente - fica registrada aqui e
+  no log; pra reprocessar, apague a linha correspondente em `processed_chats`.
 
 Logs tambem vao pra `logs/app.log` (rotaciona em 5MB, mantem 3 arquivos) -
 mesma recomendacao de volume persistente se quiser manter historico entre
