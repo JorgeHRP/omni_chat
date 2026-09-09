@@ -69,6 +69,14 @@ and `logs/app.log`.
   chat is written there exactly once with an `action`: `negociacao_criada`,
   `ja_tem_negociacao`, `sem_telefone`, or `erro` (RD CRM lookup/create failed). An `erro`
   row is not retried automatically — delete the row to reprocess.
+- After a deal is created (or matched to an existing active one), `_anexar_anotacoes_omni`
+  posts **two annotations** to that deal via `POST /activities`: (1) the direct link to the
+  Omni conversation (`OMNI_CHAT_URL_TEMPLATE`), (2) the conversation history pulled from
+  `GET /chats/{id}/messages` (system/routing/summary messages filtered out, capped at
+  `RD_CRM_ANNOTATION_MAX_CHARS`, oldest lines dropped first). Annotation failures are logged
+  and swallowed — they never mark the lead `erro`, since the deal already exists.
+  `RD_CRM_USER_ID` is the author. `OMNI_CHAT_URL_TEMPLATE` default
+  (`https://app.omni.chat/#/home/chat/{chat_id}`) was confirmed against the live panel.
 - Per-lead failures are caught inside the loop so one bad lead neither aborts the run nor
   blocks the watermark. The watermark (`set_last_checked_at`) is only advanced after the
   whole lead loop finishes; a failure earlier in the run leaves it untouched and the window
@@ -90,3 +98,48 @@ and `logs/app.log`.
   `closed_at`); the real business rule is unconfirmed.
 - `create_deal` can create a **duplicate contact** in RD CRM when a phone already has a
   contact but no active deal — RD CRM's `POST /deals` is not upserting by phone.
+
+## Deploy in production
+
+Live at `https://jorge-omnichat.qbguwf.easypanel.host/` (EasyPanel, deployed from this repo's
+`main` branch). Endpoints have no auth, so `GET /poll/leads?limit=N` / `GET /poll/runs` /
+`GET /health` are reachable directly for debugging.
+
+### Bug found 2026-09-09 — `RD_CRM_DEAL_SOURCE_ID` was a dead ID (FIXED 2026-09-09)
+
+The `deal_source` object `create_deal` used to send in `POST /deals` referenced
+`RD_CRM_DEAL_SOURCE_ID=6a8d0f8b47ba12002b63035b` (from `.env` / EasyPanel env vars). That ID
+**did not exist** in the account's `deal_sources` (confirmed by paging through all 181 via
+`GET /deal_sources?token=...&page=N&limit=20` — not present in any page). RD CRM's API returned
+a bare `404 Not Found` on `POST /deals` when this happened (no error body), which surfaced in
+`logs/app.log` as an `httpx.HTTPStatusError` and marked the lead `action: "erro"` in
+`processed_chats` (see poller.py's per-lead try/except).
+
+Verified NOT the cause: `RD_CRM_USER_ID` (active user, "Francieli Mignoni") and
+`RD_CRM_DEAL_STAGE_ID_LEAD` (stage "LEAD" in pipeline "3.Comercial Brasil") both still exist.
+
+**Fix applied (option 1):** `deal_source` was dropped from `create_deal`'s body entirely and
+`RD_CRM_DEAL_SOURCE_ID` removed from `config.py` / `.env` / `.env.example`. New deals no longer
+carry an "origem" tag. If the "origem" is wanted later, create a real `deal_source` in RD CRM
+and re-add the block.
+
+**Leads still stuck as `erro` from this bug (not yet reprocessed)** — found via
+`GET /poll/leads?limit=10` on 2026-09-09:
+- OCM PLANEJADOS — 5519994827313
+- Prof. Fabio Gama — 5571988573944
+- Rosy Paulo Duda Pedro — 5551991470722
+- Vitor Luis — 5519996314800
+
+`erro` rows are not retried automatically (per the dedup model above) — now that the source ID
+is fixed, delete these rows from `processed_chats` in `data/leadsync.db` (in production, the
+EasyPanel `/app/data` volume) or manually create the deals in RD CRM so they get picked up
+again.
+
+### Stale duplicate — ignore `G:\Meu Drive\repositorios\cliente sampa\lead-sync-service`
+
+An earlier copy of this service was built and tested in that Google Drive folder before this
+repo existed. It has since drifted and is **not** the source of truth: e.g. its
+`requirements.txt` got overwritten with unrelated deps (`supabase`, `redis`, `bcrypt`, `zeep`,
+etc. from a different project) and its `poller.py`/`Dockerfile` are missing the fixes already
+in this repo (per-lead error isolation, `asyncio.Lock`, gunicorn single-worker, port 80). Don't
+pull code from there — this repo (`omni_chat`) is ahead and is what's actually deployed.

@@ -14,12 +14,21 @@ OMNI_API_SECRET = os.environ["OMNI_API_SECRET"]
 OMNI_CHATS_API_BASE = os.environ.get("OMNI_CHATS_API_BASE", "https://api.omni.chat/v1")
 OMNI_TAG_LABEL_ID = os.environ["OMNI_TAG_LABEL_ID"]
 OMNI_TAG_LABEL_NAME = os.environ.get("OMNI_TAG_LABEL_NAME", "Lead qualificado")
+# Template do link direto pra conversa no painel do Omni - o `{chat_id}` e
+# substituido pelo objectId do chat (formato confirmado no painel em 09/2026).
+OMNI_CHAT_URL_TEMPLATE = os.environ.get(
+    "OMNI_CHAT_URL_TEMPLATE", "https://app.omni.chat/#/home/chat/{chat_id}"
+)
+# Quantas mensagens da conversa puxar pra montar a anotacao de historico.
+OMNI_HISTORY_MESSAGE_LIMIT = int(os.environ.get("OMNI_HISTORY_MESSAGE_LIMIT", "300"))
+# Corta o texto da anotacao de historico neste tamanho (protege contra
+# conversas gigantes / limite de tamanho do campo no RD CRM).
+RD_CRM_ANNOTATION_MAX_CHARS = int(os.environ.get("RD_CRM_ANNOTATION_MAX_CHARS", "15000"))
 
 RD_CRM_API_BASE = os.environ.get("RD_CRM_API_BASE", "https://crm.rdstation.com/api/v1")
 RD_CRM_TOKEN = os.environ["RD_CRM_TOKEN"]
 RD_CRM_USER_ID = os.environ["RD_CRM_USER_ID"]
 RD_CRM_DEAL_STAGE_ID_LEAD = os.environ["RD_CRM_DEAL_STAGE_ID_LEAD"]
-RD_CRM_DEAL_SOURCE_ID = os.environ.get("RD_CRM_DEAL_SOURCE_ID", "")
 
 POLL_INTERVAL_MINUTES = int(os.environ.get("POLL_INTERVAL_MINUTES", "10"))
 INITIAL_LOOKBACK_HOURS = int(os.environ.get("INITIAL_LOOKBACK_HOURS", "2"))

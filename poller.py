@@ -21,6 +21,45 @@ logger = logging.getLogger("leadsync.poller")
 _run_lock = asyncio.Lock()
 
 
+async def _anexar_anotacoes_omni(
+    client: httpx.AsyncClient, deal_id: str, chat: dict
+) -> None:
+    """Cria 2 anotacoes na negociacao (aba Historico): (1) link direto pra
+    conversa no Omni, (2) historico da conversa. Erro aqui e logado mas nao
+    propaga - a negociacao ja existe, nao faz sentido marcar o lead como
+    'erro' so porque a anotacao falhou."""
+    chat_id = chat.get("objectId")
+    if not deal_id:
+        logger.warning("Sem deal_id pra anexar anotacoes (chat %s) - pulando.", chat_id)
+        return
+
+    try:
+        url = omni_client.chat_conversation_url(chat)
+        if url:
+            await rdcrm_client.create_annotation(client, deal_id, f"Conversa no Omni: {url}")
+
+        messages = await omni_client.fetch_chat_messages(
+            client, chat_id, config.OMNI_HISTORY_MESSAGE_LIMIT
+        )
+        history = omni_client.format_history(messages)
+        if history:
+            if len(history) > config.RD_CRM_ANNOTATION_MAX_CHARS:
+                # mantem as mensagens mais recentes; descarta a primeira linha
+                # que ficou pela metade no corte.
+                history = history[-config.RD_CRM_ANNOTATION_MAX_CHARS:].split("\n", 1)[-1]
+                history = "[historico truncado - mensagens mais antigas omitidas]\n" + history
+            await rdcrm_client.create_annotation(
+                client, deal_id, f"Historico da conversa (Omni)\n\n{history}"
+            )
+        logger.info(
+            "Anotacoes (link + historico) anexadas a deal %s (chat %s).", deal_id, chat_id
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Falha anexando anotacoes do Omni a deal %s (chat %s).", deal_id, chat_id
+        )
+
+
 async def run_poll() -> dict:
     if _run_lock.locked():
         logger.info("Poll ja em execucao - ignorando este disparo.")
@@ -96,10 +135,12 @@ async def _run_poll() -> dict:
 
                 try:
                     contact = await rdcrm_client.find_contact_by_phone(client, phone)
-                    if contact and rdcrm_client.has_active_deal(contact):
+                    existing_deal_id = rdcrm_client.active_deal_id(contact) if contact else None
+                    if existing_deal_id:
                         skipped_existing_deal += 1
-                        db.mark_chat_processed(chat_id, phone, name, "ja_tem_negociacao", None, processed_at)
-                        logger.info("Chat %s (%s) ja tem negociacao ativa no RD CRM - nada a fazer.", chat_id, name)
+                        db.mark_chat_processed(chat_id, phone, name, "ja_tem_negociacao", existing_deal_id, processed_at)
+                        logger.info("Chat %s (%s) ja tem negociacao ativa (%s) no RD CRM - anexando anotacoes.", chat_id, name, existing_deal_id)
+                        await _anexar_anotacoes_omni(client, existing_deal_id, chat)
                         continue
 
                     deal = await rdcrm_client.create_deal(client, name, phone)
@@ -107,6 +148,7 @@ async def _run_poll() -> dict:
                     deals_created += 1
                     db.mark_chat_processed(chat_id, phone, name, "negociacao_criada", deal_id, processed_at)
                     logger.info("Negociacao criada no RD CRM pra %s (chat %s): deal_id=%s", name, chat_id, deal_id)
+                    await _anexar_anotacoes_omni(client, deal_id, chat)
                 except Exception as exc:  # noqa: BLE001
                     # Falha num lead nao pode abortar a run inteira nem impedir o
                     # avanco do watermark (senao os leads seguintes nunca sao

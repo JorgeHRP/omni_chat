@@ -16,8 +16,12 @@ A cada `POLL_INTERVAL_MINUTES` (padrao 10 min), roda automaticamente:
    seguranca de `MAX_PAGES_PER_RUN` paginas).
 2. Filtra as que tem a tag `OMNI_TAG_LABEL_ID` ("Lead qualificado").
 3. Pra cada conversa nova (ainda nao processada): busca o telefone no RD CRM.
-   - Se ja existe negociacao ativa -> nao faz nada, so registra.
+   - Se ja existe negociacao ativa -> registra e anexa as anotacoes (abaixo)
+     na negociacao existente.
    - Se nao existe -> cria a negociacao no RD CRM.
+   Em ambos os casos, cria 2 anotacoes na negociacao (aba Historico): o link
+   direto pra conversa no Omni e o historico completo do chat. Falha ao criar
+   anotacao e so logada (nao marca o lead como erro).
 4. Guarda tudo no SQLite (`data/leadsync.db`): ate onde ja checou, quais
    conversas ja foram processadas (pra nunca duplicar), e um log de cada
    execucao.
