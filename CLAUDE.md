@@ -92,10 +92,23 @@ and `logs/app.log`.
   platform UI and mount a persistent volume at `/app/data` (and optionally `/app/logs`).
 - Endpoints have no authentication — add protection before exposing beyond an internal network.
 
+### Card rules (client doc "Dados obrigatórios para criar um card.docx", 2026-09-26)
+
+- Owner: RD user matching the Omni attendant — `chat.user` (usually null) then the most recent
+  operator name in the messages (`rdcrm_client.match_user_by_name`: exact, else first+last name,
+  unique). Fallback `RD_CRM_USER_ID`. Annotations are authored by the owner.
+- Existing deal = open deal in `RD_CRM_DEAL_PIPELINE_ID` ("3.Comercial Brasil") linked to a
+  contact with the same phone (DDD + last 8 digits), or to the same organization with the same
+  owner. RD's `/organizations?q=` does NOT search by CNPJ, only by name; many orgs have the
+  Documento Fiscal field empty.
+- New deal: name = lead name, `deal_source` = "Marketing - Whatsapp Omni", phone flagged
+  WhatsApp, email, organization (found by name/CNPJ or created with Documento Fiscal digits).
+- NOT yet verified live (writes to prod): `create_organization` body shape and the
+  `whatsapp: true` phone flag. Check the first real card after deploy.
+
 ## Known open issues (see README.md "O que ainda falta")
 
-- `has_active_deal` in `rdcrm_client.py` uses a provisional rule (deal with no `win` and no
-  `closed_at`); the real business rule is unconfirmed.
+- "Active" deal = no `win` and no `closed_at` (provisional rule).
 - `create_deal` can create a **duplicate contact** in RD CRM when a phone already has a
   contact but no active deal — RD CRM's `POST /deals` is not upserting by phone.
 

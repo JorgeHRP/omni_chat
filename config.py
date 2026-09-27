@@ -27,8 +27,21 @@ RD_CRM_ANNOTATION_MAX_CHARS = int(os.environ.get("RD_CRM_ANNOTATION_MAX_CHARS", 
 
 RD_CRM_API_BASE = os.environ.get("RD_CRM_API_BASE", "https://crm.rdstation.com/api/v1")
 RD_CRM_TOKEN = os.environ["RD_CRM_TOKEN"]
+# Dono padrao da negociacao - usado so quando o atendente do chat no Omni nao
+# tem usuario correspondente (por email ou nome) no RD CRM.
 RD_CRM_USER_ID = os.environ["RD_CRM_USER_ID"]
 RD_CRM_DEAL_STAGE_ID_LEAD = os.environ["RD_CRM_DEAL_STAGE_ID_LEAD"]
+# Funil onde a negociacao e criada e onde checamos se ja existe uma ativa
+# (padrao: "3.Comercial Brasil"). Negociacoes em outros funis sao ignoradas.
+RD_CRM_DEAL_PIPELINE_ID = os.environ.get("RD_CRM_DEAL_PIPELINE_ID", "692f81682d85a9001e8b504e")
+# Fonte da negociacao (padrao: "Marketing - Whatsapp Omni", confirmada na
+# lista de deal_sources em 26/09/2026). Vazio = sem fonte.
+RD_CRM_DEAL_SOURCE_ID = os.environ.get("RD_CRM_DEAL_SOURCE_ID", "608b18cdf59636001b59280e")
+# Campo personalizado da EMPRESA "Documento Fiscal (CNPJ, CPF, ...)" -
+# obrigatorio no RD, so digitos.
+RD_CRM_ORG_TAX_DOC_FIELD_ID = os.environ.get(
+    "RD_CRM_ORG_TAX_DOC_FIELD_ID", "5fd26d3e5cc1db00123f7dcd"
+)
 
 POLL_INTERVAL_MINUTES = int(os.environ.get("POLL_INTERVAL_MINUTES", "10"))
 INITIAL_LOOKBACK_HOURS = int(os.environ.get("INITIAL_LOOKBACK_HOURS", "2"))

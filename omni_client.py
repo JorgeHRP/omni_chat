@@ -2,6 +2,8 @@
 vivo em 01/09/2026. Ver README.md deste servico pra contexto de como essa API
 foi encontrada e o que ja foi confirmado/testado."""
 
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -57,10 +59,29 @@ def chat_conversation_url(chat: dict) -> Optional[str]:
 _SKIP_MESSAGE_TYPES = {"ROUTING", "SUMMARY", "GROUPED", "INTERACTIVE"}
 
 
+# Horario de Brasilia (sem horario de verao desde 2019). Offset fixo em vez de
+# zoneinfo porque a imagem python:slim nao traz tzdata.
+_BRT = timezone(timedelta(hours=-3))
+
+
+def _format_ts(iso: str) -> str:
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return iso[:16]
+    return dt.astimezone(_BRT).strftime("%d/%m/%Y %H:%M")
+
+
 def format_history(messages: list[dict]) -> str:
-    """Monta o historico da conversa como texto simples pra virar anotacao no
-    RD CRM. So as mensagens da conversa (cliente/atendente), marcando a
-    direcao; descarta roteamento/resumo automatico."""
+    """Monta o historico da conversa no modelo de anotacao pedido pelo
+    cliente (doc "Dados obrigatorios para criar um card"):
+
+        [13/08/2026 13:17] 👤 Operador: *Sabrina Vargas Dainhaia:*
+        Boa tarde Victoria, tudo certo?
+        [13/08/2026 13:25] 💬 Cliente: Oi, boa tarde.
+
+    So as mensagens da conversa (cliente/atendente); descarta roteamento e
+    resumo automatico."""
     lines: list[str] = []
     for msg in messages:
         if msg.get("type") in _SKIP_MESSAGE_TYPES:
@@ -68,13 +89,15 @@ def format_history(messages: list[dict]) -> str:
         text = (msg.get("text") or "").strip()
         if not text:
             continue
+        ts = _format_ts(msg.get("createdAt") or "")
         if (msg.get("status") or "").startswith("INCOMING"):
-            who = "Cliente"
+            lines.append(f"[{ts}] 💬 Cliente: {text}")
         else:
-            user = msg.get("user") or {}
-            who = user.get("name") or "Atendimento"
-        ts = (msg.get("createdAt") or "")[:19].replace("T", " ")
-        lines.append(f"[{ts}] {who}: {text}")
+            operator = ((msg.get("user") or {}).get("name") or "").strip()
+            if operator:
+                lines.append(f"[{ts}] 👤 Operador: *{operator}:*\n{text}")
+            else:
+                lines.append(f"[{ts}] 👤 Operador: {text}")
     return "\n".join(lines)
 
 
@@ -93,3 +116,48 @@ def normalize_phone(chat: dict) -> Optional[str]:
 
 def chat_name(chat: dict, phone: Optional[str]) -> str:
     return chat.get("name") or (f"Contato Omni {phone}" if phone else "Contato Omni sem nome")
+
+
+def chat_owner(chat: dict) -> tuple[Optional[str], Optional[str]]:
+    """(email, nome) do atendente responsavel pelo chat no Omni (`chat.user`)
+    - quem assumiu a conversa e marcou a tag. A API nao expoe quem aplicou
+    cada label, entao esse e o melhor indicador disponivel. Pode vir vazio."""
+    user = chat.get("user") or {}
+    email = (user.get("email") or "").strip().lower() or None
+    name = " ".join(filter(None, [user.get("name"), user.get("lastName")])).strip() or None
+    return email, name
+
+
+def message_operators(messages: list[dict]) -> list[str]:
+    """Nomes dos operadores que escreveram na conversa, do mais recente pro
+    mais antigo, sem repetir. Inclui bots (ex.: "Mobi") - quem chama descarta
+    os que nao tem usuario no RD."""
+    names: list[str] = []
+    for msg in reversed(messages):
+        if (msg.get("status") or "").startswith("INCOMING") or msg.get("type") in _SKIP_MESSAGE_TYPES:
+            continue
+        user = msg.get("user") or {}
+        name = " ".join(filter(None, [user.get("name"), user.get("lastName")])).strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def chat_email(chat: dict) -> Optional[str]:
+    customer = chat.get("customer") or {}
+    return (chat.get("email") or customer.get("email") or "").strip() or None
+
+
+def chat_company(chat: dict) -> Optional[str]:
+    return ((chat.get("customer") or {}).get("businessName") or "").strip() or None
+
+
+def chat_tax_document(chat: dict) -> Optional[str]:
+    """CNPJ (businessTaxId) ou CPF (taxDocumentNumber) do cliente no Omni, so
+    digitos - o RD exige sem pontuacao."""
+    customer = chat.get("customer") or {}
+    for raw in (customer.get("businessTaxId"), customer.get("taxDocumentNumber")):
+        digits = re.sub(r"\D", "", str(raw or ""))
+        if digits:
+            return digits
+    return None

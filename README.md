@@ -15,12 +15,26 @@ A cada `POLL_INTERVAL_MINUTES` (padrao 10 min), roda automaticamente:
    execucao, paginando de verdade ate alcancar o presente (ou um limite de
    seguranca de `MAX_PAGES_PER_RUN` paginas).
 2. Filtra as que tem a tag `OMNI_TAG_LABEL_ID` ("Lead qualificado").
-3. Pra cada conversa nova (ainda nao processada): busca o telefone no RD CRM.
-   - Se ja existe negociacao ativa -> registra e anexa as anotacoes (abaixo)
-     na negociacao existente.
-   - Se nao existe -> cria a negociacao no RD CRM.
+3. Pra cada conversa nova (ainda nao processada), seguindo o doc do cliente
+   "Dados obrigatorios para criar um card":
+   - **Dono**: usuario do RD que corresponde a quem atendeu no Omni
+     (`chat.user` por email/nome; senao o ultimo operador que escreveu na
+     conversa, por nome - casa "Sabrina Dainhaia" com "Sabrina Vargas
+     Dainhaia"). Sem correspondencia -> `RD_CRM_USER_ID`.
+   - **Oportunidade ja existente** (so no funil `RD_CRM_DEAL_PIPELINE_ID`,
+     "3.Comercial Brasil"; outros funis sao ignorados): negociacao aberta de
+     um contato com o mesmo telefone (compara DDD + 8 ultimos digitos, o RD
+     guarda em varios formatos), ou da mesma empresa (razao social/CNPJ) com o
+     mesmo responsavel. Mesma empresa com outro responsavel -> card novo.
+     Se existe -> registra e anexa as anotacoes (abaixo) nela.
+   - **Card novo**: nome = nome do lead; fonte `RD_CRM_DEAL_SOURCE_ID`
+     ("Marketing - Whatsapp Omni"); contato com nome, telefone marcado como
+     WhatsApp e email; empresa = razao social do Omni (reaproveita a do RD
+     ou cria com o Documento Fiscal so em digitos, se o Omni trouxer CNPJ/CPF).
    Em ambos os casos, cria 2 anotacoes na negociacao (aba Historico): o link
-   direto pra conversa no Omni e o historico completo do chat. Falha ao criar
+   direto pra conversa no Omni e o historico do chat no modelo
+   `[dd/mm/aaaa hh:mm] 👤 Operador: *Nome:*` / `💬 Cliente:` (horario de Brasilia).
+   Autor das anotacoes = dono da negociacao. Falha ao criar
    anotacao e so logada (nao marca o lead como erro).
 4. Guarda tudo no SQLite (`data/leadsync.db`): ate onde ja checou, quais
    conversas ja foram processadas (pra nunca duplicar), e um log de cada
