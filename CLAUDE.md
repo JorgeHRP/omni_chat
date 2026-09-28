@@ -103,8 +103,11 @@ and `logs/app.log`.
   Documento Fiscal field empty.
 - New deal: name = lead name, phone flagged WhatsApp, email, organization (found by
   name/CNPJ or created with Documento Fiscal digits). **No `deal_source`** — see below.
-- If RD rejects the full `POST /deals` body (4xx), `create_deal` retries once with the
-  minimal body that worked in prod until 2026-09-25 (default owner, name + phone only).
+- The full body (Omni owner + `whatsapp: true` + email) got a **500** (HTML page) from RD on
+  2026-09-28, after `deal_source` was removed. `create_deal` now retries on any error in stages:
+  full → without whatsapp/email → minimal body that worked until 2026-09-25 (default owner,
+  name + phone). Each rejection is logged as `POST /deals (body '...') recusado` — check which
+  stage succeeds to learn which field RD rejects. The 500s did not create ghost deals.
 - Inactive RD users (`active: false`) are ignored when matching the owner — RD has
   duplicate names where the first entry is an inactive old account.
 - `create_organization` returns **422** (seen 2026-09-28, "JAIRO WALDOW - ME"); body shape

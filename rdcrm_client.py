@@ -249,51 +249,51 @@ async def create_deal(
     user_id: str,
     organization_id: Optional[str],
 ) -> dict:
-    contact: dict = {
-        "name": name,
-        "phones": [{"phone": phone, "type": "cellphone", "whatsapp": True}],
-    }
-    if email:
-        contact["emails"] = [{"email": email}]
-
-    # Sem `deal_source`: com ele o RD responde 404 sem corpo no POST /deals,
-    # mesmo com um ID valido ("Marketing - Whatsapp Omni", 608b18cd...,
-    # confirmado via GET /deal_sources/{id} em 28/09/2026). Mesmo sintoma do
-    # bug de 09/09. Sem o campo, o POST funciona (28 cards criados ate 25/09).
-    body: dict = {
-        "deal": {
-            "name": name,
-            "deal_stage_id": config.RD_CRM_DEAL_STAGE_ID_LEAD,
-            "user_id": user_id,
-            "deal_custom_fields": [],
-        },
-        "contacts": [contact],
-    }
-    if organization_id:
-        body["organization"] = {"_id": organization_id}
-
-    resp = await client.post(
-        f"{config.RD_CRM_API_BASE}/deals", params=_params(), json=body, timeout=30.0
-    )
-    if resp.is_client_error:
-        # Rede de seguranca: se o body completo for recusado, tenta o body
-        # minimo que ja funcionava em producao (dono padrao, so nome +
-        # telefone) - melhor um card incompleto do que perder o lead.
-        logger.warning(
-            "POST /deals recusado (%s: %s) pra '%s' - tentando body minimo.",
-            resp.status_code, resp.text[:500], name,
-        )
-        fallback = {
+    def body(owner: str, full_contact: bool, with_org: bool) -> dict:
+        contact: dict = {"name": name, "phones": [{"phone": phone, "type": "cellphone"}]}
+        if full_contact:
+            contact["phones"][0]["whatsapp"] = True
+            if email:
+                contact["emails"] = [{"email": email}]
+        b: dict = {
             "deal": {
                 "name": name,
                 "deal_stage_id": config.RD_CRM_DEAL_STAGE_ID_LEAD,
-                "user_id": config.RD_CRM_USER_ID,
+                "user_id": owner,
                 "deal_custom_fields": [],
             },
-            "contacts": [{"name": name, "phones": [{"phone": phone, "type": "cellphone"}]}],
+            "contacts": [contact],
         }
+        if with_org and organization_id:
+            b["organization"] = {"_id": organization_id}
+        return b
+
+    # Sem `deal_source`: com ele o RD responde 404 sem corpo no POST /deals,
+    # mesmo com um ID valido ("Marketing - Whatsapp Omni", 608b18cd...,
+    # confirmado via GET /deal_sources/{id} em 28/09/2026).
+    #
+    # O body completo (dono do Omni + whatsapp + email) deu 500 em 28/09. Pra
+    # nao perder lead, tenta em etapas ate o body minimo que ja funcionava em
+    # producao (dono padrao, so nome + telefone); cada recusa e logada, o que
+    # mostra qual campo o RD nao aceita.
+    attempts = [
+        ("completo", body(user_id, True, True)),
+        ("sem whatsapp/email", body(user_id, False, True)),
+        ("minimo, dono padrao", body(config.RD_CRM_USER_ID, False, False)),
+    ]
+    for i, (label, payload) in enumerate(attempts):
+        if i and payload == attempts[i - 1][1]:
+            continue
         resp = await client.post(
-            f"{config.RD_CRM_API_BASE}/deals", params=_params(), json=fallback, timeout=30.0
+            f"{config.RD_CRM_API_BASE}/deals", params=_params(), json=payload, timeout=30.0
+        )
+        if not resp.is_error:
+            if i:
+                logger.warning("Negociacao '%s' criada com o body '%s'.", name, label)
+            return resp.json()
+        logger.warning(
+            "POST /deals (body '%s') recusado pra '%s': %s %s",
+            label, name, resp.status_code, resp.text[:300],
         )
     _raise_for_status(resp)
     return resp.json()
