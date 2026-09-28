@@ -101,10 +101,15 @@ and `logs/app.log`.
   contact with the same phone (DDD + last 8 digits), or to the same organization with the same
   owner. RD's `/organizations?q=` does NOT search by CNPJ, only by name; many orgs have the
   Documento Fiscal field empty.
-- New deal: name = lead name, `deal_source` = "Marketing - Whatsapp Omni", phone flagged
-  WhatsApp, email, organization (found by name/CNPJ or created with Documento Fiscal digits).
-- NOT yet verified live (writes to prod): `create_organization` body shape and the
-  `whatsapp: true` phone flag. Check the first real card after deploy.
+- New deal: name = lead name, phone flagged WhatsApp, email, organization (found by
+  name/CNPJ or created with Documento Fiscal digits). **No `deal_source`** — see below.
+- If RD rejects the full `POST /deals` body (4xx), `create_deal` retries once with the
+  minimal body that worked in prod until 2026-09-25 (default owner, name + phone only).
+- Inactive RD users (`active: false`) are ignored when matching the owner — RD has
+  duplicate names where the first entry is an inactive old account.
+- `create_organization` returns **422** (seen 2026-09-28, "JAIRO WALDOW - ME"); body shape
+  still wrong. The error body is now logged via `_raise_for_status` — read it and fix.
+- NOT yet verified live: the `whatsapp: true` phone flag.
 
 ## Known open issues (see README.md "O que ainda falta")
 
@@ -118,7 +123,23 @@ Live at `https://jorge-omnichat.qbguwf.easypanel.host/` (EasyPanel, deployed fro
 `main` branch). Endpoints have no auth, so `GET /poll/leads?limit=N` / `GET /poll/runs` /
 `GET /health` are reachable directly for debugging.
 
-### Bug found 2026-09-09 — `RD_CRM_DEAL_SOURCE_ID` was a dead ID (FIXED 2026-09-09)
+### `deal_source` in `POST /deals` → bare 404 (seen 2026-09-09 and again 2026-09-28)
+
+2026-09-28: commit d44e028 re-added `deal_source: {_id: 608b18cdf59636001b59280e}`
+("Marketing - Whatsapp Omni"). That ID **exists** (`GET /deal_sources/{id}` → 200), yet every
+`POST /deals` returned a bare 404 and 7 leads were marked `erro`. Deals created without
+`deal_source` (old body) worked through 2026-09-25. So the 2026-09-09 "dead ID" diagnosis below
+was probably wrong: RD rejects `deal_source` in this shape regardless of the ID. Removed again
+(and `RD_CRM_DEAL_SOURCE_ID` removed from config). To get the "origem" back, test another shape
+(e.g. `deal.deal_source_id`) on one throwaway deal first.
+
+Leads stuck as `erro` on 2026-09-28 (delete their `processed_chats` rows to reprocess):
+tesMIp4lCVtr, PC1rFm32d6Is, sA4vFlEAAL3i, 0wsN8n4uIsgl, wiSfDKgy57aX, 6lrFQVrN7MEp, s2OFmkhU67UV.
+
+The production DB only had rows from 2026-09-28 on that day — check that `/app/data` is really a
+persistent volume (`docker inspect <container> --format '{{json .Mounts}}'`).
+
+### Earlier note: bug found 2026-09-09 — `RD_CRM_DEAL_SOURCE_ID` was a dead ID
 
 The `deal_source` object `create_deal` used to send in `POST /deals` referenced
 `RD_CRM_DEAL_SOURCE_ID=6a8d0f8b47ba12002b63035b` (from `.env` / EasyPanel env vars). That ID

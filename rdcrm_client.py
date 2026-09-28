@@ -2,9 +2,10 @@
 ativa no funil configurado, cria empresa/negociacao e anotacoes.
 
 Campos do card seguem o doc do cliente "Dados obrigatorios para criar um
-card": nome da negociacao (nome do lead), fonte, empresa (com Documento
+card": nome da negociacao (nome do lead), empresa (com Documento
 Fiscal so em digitos), contato (nome, telefone com WhatsApp, email)."""
 
+import logging
 import re
 import unicodedata
 from typing import Optional
@@ -13,9 +14,22 @@ import httpx
 
 import config
 
+logger = logging.getLogger("leadsync.rdcrm")
+
 
 def _params(**extra) -> dict:
     return {"token": config.RD_CRM_TOKEN, **extra}
+
+
+def _raise_for_status(resp: httpx.Response) -> None:
+    """Como `raise_for_status`, mas inclui o corpo da resposta na mensagem (o
+    RD explica o 422 no corpo) e nao expoe o token da URL."""
+    if resp.is_error:
+        raise httpx.HTTPStatusError(
+            f"{resp.status_code} em {resp.request.method} {resp.url.path}: {resp.text[:500]}",
+            request=resp.request,
+            response=resp,
+        )
 
 
 def norm_text(value: Optional[str]) -> str:
@@ -58,6 +72,10 @@ async def fetch_users(client: httpx.AsyncClient) -> tuple[dict[str, str], dict[s
     by_email: dict[str, str] = {}
     by_name: dict[str, str] = {}
     for u in users:
+        # Ha nomes repetidos (usuario antigo inativo + novo ativo, ex. "Iuri
+        # Lobato") - inativo nao pode virar dono.
+        if u.get("active") is False:
+            continue
         uid = u.get("_id") or u.get("id")
         if u.get("email"):
             by_email[u["email"].strip().lower()] = uid
@@ -160,7 +178,7 @@ async def create_organization(
     resp = await client.post(
         f"{config.RD_CRM_API_BASE}/organizations", params=_params(), json=body, timeout=30.0
     )
-    resp.raise_for_status()
+    _raise_for_status(resp)
     return resp.json()
 
 
@@ -238,6 +256,10 @@ async def create_deal(
     if email:
         contact["emails"] = [{"email": email}]
 
+    # Sem `deal_source`: com ele o RD responde 404 sem corpo no POST /deals,
+    # mesmo com um ID valido ("Marketing - Whatsapp Omni", 608b18cd...,
+    # confirmado via GET /deal_sources/{id} em 28/09/2026). Mesmo sintoma do
+    # bug de 09/09. Sem o campo, o POST funciona (28 cards criados ate 25/09).
     body: dict = {
         "deal": {
             "name": name,
@@ -247,15 +269,33 @@ async def create_deal(
         },
         "contacts": [contact],
     }
-    if config.RD_CRM_DEAL_SOURCE_ID:
-        body["deal_source"] = {"_id": config.RD_CRM_DEAL_SOURCE_ID}
     if organization_id:
         body["organization"] = {"_id": organization_id}
 
     resp = await client.post(
         f"{config.RD_CRM_API_BASE}/deals", params=_params(), json=body, timeout=30.0
     )
-    resp.raise_for_status()
+    if resp.is_client_error:
+        # Rede de seguranca: se o body completo for recusado, tenta o body
+        # minimo que ja funcionava em producao (dono padrao, so nome +
+        # telefone) - melhor um card incompleto do que perder o lead.
+        logger.warning(
+            "POST /deals recusado (%s: %s) pra '%s' - tentando body minimo.",
+            resp.status_code, resp.text[:500], name,
+        )
+        fallback = {
+            "deal": {
+                "name": name,
+                "deal_stage_id": config.RD_CRM_DEAL_STAGE_ID_LEAD,
+                "user_id": config.RD_CRM_USER_ID,
+                "deal_custom_fields": [],
+            },
+            "contacts": [{"name": name, "phones": [{"phone": phone, "type": "cellphone"}]}],
+        }
+        resp = await client.post(
+            f"{config.RD_CRM_API_BASE}/deals", params=_params(), json=fallback, timeout=30.0
+        )
+    _raise_for_status(resp)
     return resp.json()
 
 

@@ -21,6 +21,8 @@ logging.basicConfig(
         ),
     ],
 )
+# O httpx loga a URL completa em INFO, e o token do RD vai na query string.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("leadsync")
 
 scheduler = AsyncIOScheduler()

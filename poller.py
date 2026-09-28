@@ -189,7 +189,10 @@ async def _run_poll() -> dict:
 
             for chat in leads:
                 chat_id = chat.get("objectId")
-                if not chat_id or db.is_chat_processed(chat_id):
+                if not chat_id:
+                    continue
+                if db.is_chat_processed(chat_id):
+                    logger.info("Chat %s (%s) ja processado - ignorando.", chat_id, chat.get("name"))
                     continue
 
                 processed_at = datetime.now(timezone.utc).isoformat()

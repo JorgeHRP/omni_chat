@@ -34,9 +34,6 @@ RD_CRM_DEAL_STAGE_ID_LEAD = os.environ["RD_CRM_DEAL_STAGE_ID_LEAD"]
 # Funil onde a negociacao e criada e onde checamos se ja existe uma ativa
 # (padrao: "3.Comercial Brasil"). Negociacoes em outros funis sao ignoradas.
 RD_CRM_DEAL_PIPELINE_ID = os.environ.get("RD_CRM_DEAL_PIPELINE_ID", "692f81682d85a9001e8b504e")
-# Fonte da negociacao (padrao: "Marketing - Whatsapp Omni", confirmada na
-# lista de deal_sources em 26/09/2026). Vazio = sem fonte.
-RD_CRM_DEAL_SOURCE_ID = os.environ.get("RD_CRM_DEAL_SOURCE_ID", "608b18cdf59636001b59280e")
 # Campo personalizado da EMPRESA "Documento Fiscal (CNPJ, CPF, ...)" -
 # obrigatorio no RD, so digitos.
 RD_CRM_ORG_TAX_DOC_FIELD_ID = os.environ.get(
