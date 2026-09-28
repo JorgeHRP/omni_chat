@@ -28,8 +28,8 @@ A cada `POLL_INTERVAL_MINUTES` (padrao 10 min), roda automaticamente:
      mesmo responsavel. Mesma empresa com outro responsavel -> card novo.
      Se existe -> registra e anexa as anotacoes (abaixo) nela.
    - **Card novo**: nome = nome do lead; sem fonte (mandar `deal_source` faz o RD
-     responder 404 - ver CLAUDE.md); contato com nome, telefone marcado como
-     WhatsApp e email; empresa = razao social do Omni (reaproveita a do RD
+     responder 404 - ver CLAUDE.md); contato com nome, telefone e email
+     (marcar WhatsApp faz o RD dar 500); empresa = razao social do Omni (reaproveita a do RD
      ou cria com o Documento Fiscal so em digitos, se o Omni trouxer CNPJ/CPF).
    Em ambos os casos, cria 2 anotacoes na negociacao (aba Historico): o link
    direto pra conversa no Omni e o historico do chat no modelo

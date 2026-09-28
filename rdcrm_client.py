@@ -3,7 +3,7 @@ ativa no funil configurado, cria empresa/negociacao e anotacoes.
 
 Campos do card seguem o doc do cliente "Dados obrigatorios para criar um
 card": nome da negociacao (nome do lead), empresa (com Documento
-Fiscal so em digitos), contato (nome, telefone com WhatsApp, email)."""
+Fiscal so em digitos), contato (nome, telefone, email)."""
 
 import logging
 import re
@@ -249,12 +249,13 @@ async def create_deal(
     user_id: str,
     organization_id: Optional[str],
 ) -> dict:
-    def body(owner: str, full_contact: bool, with_org: bool) -> dict:
+    def body(owner: str, with_email: bool, with_org: bool) -> dict:
+        # Sem `whatsapp: true` no telefone: com ele o RD responde 500 (pagina
+        # HTML) no POST /deals - reproduzido em 28/09/2026 com um card de
+        # teste; mesmo body sem a flag -> 200.
         contact: dict = {"name": name, "phones": [{"phone": phone, "type": "cellphone"}]}
-        if full_contact:
-            contact["phones"][0]["whatsapp"] = True
-            if email:
-                contact["emails"] = [{"email": email}]
+        if with_email and email:
+            contact["emails"] = [{"email": email}]
         b: dict = {
             "deal": {
                 "name": name,
@@ -272,13 +273,12 @@ async def create_deal(
     # mesmo com um ID valido ("Marketing - Whatsapp Omni", 608b18cd...,
     # confirmado via GET /deal_sources/{id} em 28/09/2026).
     #
-    # O body completo (dono do Omni + whatsapp + email) deu 500 em 28/09. Pra
-    # nao perder lead, tenta em etapas ate o body minimo que ja funcionava em
-    # producao (dono padrao, so nome + telefone); cada recusa e logada, o que
-    # mostra qual campo o RD nao aceita.
+    # Rede de seguranca: se o RD recusar, tenta em etapas ate o body minimo
+    # que sempre funcionou (dono padrao, so nome + telefone) - melhor um card
+    # incompleto do que perder o lead. Cada recusa e logada.
     attempts = [
         ("completo", body(user_id, True, True)),
-        ("sem whatsapp/email", body(user_id, False, True)),
+        ("sem email/empresa", body(user_id, False, False)),
         ("minimo, dono padrao", body(config.RD_CRM_USER_ID, False, False)),
     ]
     for i, (label, payload) in enumerate(attempts):

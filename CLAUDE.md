@@ -101,18 +101,17 @@ and `logs/app.log`.
   contact with the same phone (DDD + last 8 digits), or to the same organization with the same
   owner. RD's `/organizations?q=` does NOT search by CNPJ, only by name; many orgs have the
   Documento Fiscal field empty.
-- New deal: name = lead name, phone flagged WhatsApp, email, organization (found by
+- New deal: name = lead name, phone, email, organization (found by
   name/CNPJ or created with Documento Fiscal digits). **No `deal_source`** — see below.
-- The full body (Omni owner + `whatsapp: true` + email) got a **500** (HTML page) from RD on
-  2026-09-28, after `deal_source` was removed. `create_deal` now retries on any error in stages:
-  full → without whatsapp/email → minimal body that worked until 2026-09-25 (default owner,
-  name + phone). Each rejection is logged as `POST /deals (body '...') recusado` — check which
-  stage succeeds to learn which field RD rejects. The 500s did not create ghost deals.
+- **`whatsapp: true` on the phone makes `POST /deals` return 500** (HTML page). Reproduced
+  2026-09-28 with a test deal: same body without the flag → 200 (owner Sabrina + email worked).
+  Setting the flag afterwards via `PUT /contacts/{id}` is untested. The phone is sent without it.
+- `create_deal` retries on any error in stages: full → without email/org → minimal body with the
+  default owner. Each rejection is logged as `POST /deals (body '...') recusado`.
 - Inactive RD users (`active: false`) are ignored when matching the owner — RD has
   duplicate names where the first entry is an inactive old account.
 - `create_organization` returns **422** (seen 2026-09-28, "JAIRO WALDOW - ME"); body shape
   still wrong. The error body is now logged via `_raise_for_status` — read it and fix.
-- NOT yet verified live: the `whatsapp: true` phone flag.
 
 ## Known open issues (see README.md "O que ainda falta")
 
