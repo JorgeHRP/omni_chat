@@ -40,6 +40,15 @@ RD_CRM_ORG_TAX_DOC_FIELD_ID = os.environ.get(
     "RD_CRM_ORG_TAX_DOC_FIELD_ID", "5fd26d3e5cc1db00123f7dcd"
 )
 
+# Extracao dos dados do card (empresa, CNPJ/CPF, email) de dentro da conversa
+# via OpenAI, pra quando o atendente nao preencheu o cadastro no Omni. Vazio =
+# desligado.
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
+OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+# Quanto da conversa (fim dela, em caracteres) vai pro modelo.
+OPENAI_MAX_INPUT_CHARS = int(os.environ.get("OPENAI_MAX_INPUT_CHARS", "30000"))
+
 POLL_INTERVAL_MINUTES = int(os.environ.get("POLL_INTERVAL_MINUTES", "10"))
 INITIAL_LOOKBACK_HOURS = int(os.environ.get("INITIAL_LOOKBACK_HOURS", "2"))
 MAX_PAGES_PER_RUN = int(os.environ.get("MAX_PAGES_PER_RUN", "20"))

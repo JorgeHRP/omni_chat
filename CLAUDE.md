@@ -110,8 +110,28 @@ and `logs/app.log`.
   default owner. Each rejection is logged as `POST /deals (body '...') recusado`.
 - Inactive RD users (`active: false`) are ignored when matching the owner — RD has
   duplicate names where the first entry is an inactive old account.
-- `create_organization` returns **422** (seen 2026-09-28, "JAIRO WALDOW - ME"); body shape
-  still wrong. The error body is now logged via `_raise_for_status` — read it and fix.
+- `create_organization` body works: first org created 2026-09-30 ("59.208.128 LUISA DE PAULA
+  SILVA MELLO RIBEIRO", Documento Fiscal digits filled, linked to deal "Jessyka de Paula").
+  One earlier 422 ("JAIRO WALDOW - ME", 2026-09-28) was case-specific; cause unknown (logged
+  before `_raise_for_status` existed).
+- **Annotation text is mangled by RD**: `POST /activities` (v1) stores any non-ASCII char as
+  UTF-8-read-as-Latin-1 ("Olá" → "OlÃ¡", emojis → garbage), regardless of how the body is sent
+  (plain JSON, ASCII-escaped JSON, charset header, form-encoded — all tested 2026-09-30). Notes
+  typed in the RD UI read back fine. Deal/contact names via `POST /deals` are fine.
+- The RD itself flags new contact phones as WhatsApp; `deal_source` stays empty (team fills it).
+
+### Field extraction from the conversation (extractor.py, added 2026-10-01)
+
+The client wants company / CNPJ-CPF / email taken from the chat text when the Omni customer
+record is empty (it usually is — of 18 cards on 2026-09-30 only 1 had businessName+CNPJ, 6 had
+only a CPF). `poller._lead_data` merges: Omni record first, then `extractor.extract_lead_fields`
+(OpenAI chat completions, `json_schema` structured output) fills only empty fields. Tax docs
+must pass CPF/CNPJ check digits, emails a format check, or they are dropped. CPF but no company
+→ company = customer full name (`omni_client.chat_customer_full_name`, strips numbers typed in
+the last name), matching how the sales team registers individuals in RD. Disabled when
+`OPENAI_API_KEY` is empty; any extractor exception is logged and the card is created anyway.
+The Omni customer record also has `salesPerson` (seller, with email) — unused so far, a
+possible better owner source.
 
 ## Known open issues (see README.md "O que ainda falta")
 

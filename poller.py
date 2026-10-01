@@ -11,6 +11,7 @@ import httpx
 
 import config
 import db
+import extractor
 import omni_client
 import rdcrm_client
 
@@ -92,32 +93,55 @@ def _resolve_owner(
     return config.RD_CRM_USER_ID
 
 
-async def _resolve_organization(
-    client: httpx.AsyncClient, chat: dict, owner_id: str
-) -> tuple[Optional[dict], Optional[str]]:
-    """(empresa ja existente no RD ou None, id da empresa pro card novo).
-    Cria a empresa so quando o Omni traz razao social E CNPJ/CPF - o
-    Documento Fiscal e obrigatorio na empresa do RD."""
-    company = omni_client.chat_company(chat)
-    tax_document = omni_client.chat_tax_document(chat)
-    if not company:
-        return None, None
+async def _lead_data(client: httpx.AsyncClient, chat: dict, messages: list[dict]) -> dict:
+    """Empresa, CNPJ/CPF e email do lead. O cadastro do cliente no Omni tem
+    prioridade; o que estiver vazio vem da conversa (extractor/OpenAI).
 
-    org = await rdcrm_client.find_organization(client, company, tax_document)
-    if org:
-        return org, org["_id"]
+    Sem razao social mas com CPF -> empresa = nome completo do cliente, que e
+    como a equipe cadastra pessoa fisica no RD (ex.: "Adriano Parana de
+    Oliveira" + CPF)."""
+    data = {
+        "empresa": omni_client.chat_company(chat),
+        "documento": omni_client.chat_tax_document(chat),
+        "email": omni_client.chat_email(chat),
+    }
+    if not all(data.values()):
+        try:
+            extracted = await extractor.extract_lead_fields(client, messages)
+        except Exception:  # noqa: BLE001 - extracao e opcional, nunca derruba o lead
+            logger.exception("Falha extraindo dados da conversa do chat %s.", chat.get("objectId"))
+            extracted = {}
+        filled = {k: extracted.get(k) for k in data if not data[k] and extracted.get(k)}
+        if filled:
+            logger.info("Chat %s: dados extraidos da conversa: %s", chat.get("objectId"), filled)
+        data.update(filled)
+        data["nome_completo"] = extracted.get("nome_completo")
+
+    if not data["empresa"] and data["documento"] and len(data["documento"]) == 11:
+        data["empresa"] = omni_client.chat_customer_full_name(chat) or data.get("nome_completo")
+    return data
+
+
+async def _create_organization(
+    client: httpx.AsyncClient, company: Optional[str], tax_document: Optional[str], owner_id: str
+) -> Optional[str]:
+    """Cria a empresa pro card novo (so com nome E CNPJ/CPF - o Documento
+    Fiscal e obrigatorio na empresa do RD). Chamado so depois de confirmar
+    que nao ha negociacao existente, pra nao deixar empresa solta no RD."""
+    if not company:
+        return None
     if not tax_document:
-        logger.info("Empresa '%s' sem CNPJ/CPF no Omni - card sem empresa.", company)
-        return None, None
+        logger.info("Empresa '%s' sem CNPJ/CPF (Omni nem conversa) - card sem empresa.", company)
+        return None
     try:
         created = await rdcrm_client.create_organization(client, company, tax_document, owner_id)
         org_id = created.get("_id") or (created.get("organization") or {}).get("_id")
         logger.info("Empresa '%s' criada no RD CRM: %s", company, org_id)
-        return None, org_id
+        return org_id
     except httpx.HTTPError:
         # Sem empresa o card ainda serve - nao vale perder o lead por isso.
         logger.exception("Falha criando empresa '%s' - card sera criado sem empresa.", company)
-        return None, None
+        return None
 
 
 async def run_poll() -> dict:
@@ -208,7 +232,11 @@ async def _run_poll() -> dict:
                     messages = await _fetch_messages(client, chat_id)
                     owner_id = _resolve_owner(chat, messages, users_by_email, users_by_name)
                     contacts = await rdcrm_client.find_contacts_by_phone(client, phone)
-                    org, org_id = await _resolve_organization(client, chat, owner_id)
+                    lead = await _lead_data(client, chat, messages)
+                    org = (
+                        await rdcrm_client.find_organization(client, lead["empresa"], lead["documento"])
+                        if lead["empresa"] else None
+                    )
 
                     existing = await rdcrm_client.find_existing_deal(client, contacts, org, owner_id)
                     if existing:
@@ -219,8 +247,11 @@ async def _run_poll() -> dict:
                         await _anexar_anotacoes_omni(client, existing_deal_id, chat, messages, owner_id)
                         continue
 
+                    org_id = org["_id"] if org else await _create_organization(
+                        client, lead["empresa"], lead["documento"], owner_id
+                    )
                     deal = await rdcrm_client.create_deal(
-                        client, name, phone, omni_client.chat_email(chat), owner_id, org_id
+                        client, name, phone, lead["email"], owner_id, org_id
                     )
                     deal_id = (deal.get("deal") or {}).get("_id") or deal.get("_id")
                     deals_created += 1

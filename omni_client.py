@@ -56,7 +56,7 @@ def chat_conversation_url(chat: dict) -> Optional[str]:
 
 # Tipos de mensagem que sao "ruido de sistema" e nao fazem parte do historico
 # da conversa em si (roteamento entre times, resumo automatico do bot, etc).
-_SKIP_MESSAGE_TYPES = {"ROUTING", "SUMMARY", "GROUPED", "INTERACTIVE"}
+SKIP_MESSAGE_TYPES = {"ROUTING", "SUMMARY", "GROUPED", "INTERACTIVE"}
 
 
 # Horario de Brasilia (sem horario de verao desde 2019). Offset fixo em vez de
@@ -84,7 +84,7 @@ def format_history(messages: list[dict]) -> str:
     resumo automatico."""
     lines: list[str] = []
     for msg in messages:
-        if msg.get("type") in _SKIP_MESSAGE_TYPES:
+        if msg.get("type") in SKIP_MESSAGE_TYPES:
             continue
         text = (msg.get("text") or "").strip()
         if not text:
@@ -134,7 +134,7 @@ def message_operators(messages: list[dict]) -> list[str]:
     os que nao tem usuario no RD."""
     names: list[str] = []
     for msg in reversed(messages):
-        if (msg.get("status") or "").startswith("INCOMING") or msg.get("type") in _SKIP_MESSAGE_TYPES:
+        if (msg.get("status") or "").startswith("INCOMING") or msg.get("type") in SKIP_MESSAGE_TYPES:
             continue
         user = msg.get("user") or {}
         name = " ".join(filter(None, [user.get("name"), user.get("lastName")])).strip()
@@ -150,6 +150,16 @@ def chat_email(chat: dict) -> Optional[str]:
 
 def chat_company(chat: dict) -> Optional[str]:
     return ((chat.get("customer") or {}).get("businessName") or "").strip() or None
+
+
+def chat_customer_full_name(chat: dict) -> Optional[str]:
+    """Nome + sobrenome do cadastro do cliente no Omni, sem numeros soltos -
+    tem cadastro com o CPF digitado no sobrenome ("Tine - 025.027.524-42")."""
+    customer = chat.get("customer") or {}
+    full = " ".join(filter(None, [customer.get("name"), customer.get("lastName")]))
+    full = re.sub(r"[\d.\-/]{5,}", " ", full)
+    full = " ".join(full.replace(" - ", " ").split()).strip(" -")
+    return full or None
 
 
 def chat_tax_document(chat: dict) -> Optional[str]:

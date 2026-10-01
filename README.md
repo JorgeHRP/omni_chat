@@ -93,6 +93,24 @@ docker run --rm -p 8000:80 --env-file .env -v $(pwd)/data:/app/data lead-sync-se
    `-w 1` de proposito: o agendador (APScheduler) roda dentro do processo;
    com 2+ workers cada um sobe um scheduler e o polling roda em duplicidade.
 
+### Extracao de dados da conversa (OpenAI)
+
+Quando o cadastro do cliente no Omni nao tem razao social, CNPJ/CPF ou email,
+o servico manda a conversa pra OpenAI e usa o que vier pra preencher **so o
+que estiver vazio** (o cadastro do Omni tem prioridade). CPF/CNPJ so e aceito
+com digito verificador valido; email so com formato valido. Sem razao social
+mas com CPF, a empresa e criada com o nome completo do cliente (padrao que a
+equipe ja usa no RD). Falha na OpenAI nao impede o card.
+
+Variaveis (EasyPanel):
+- `OPENAI_API_KEY` - vazio desliga a extracao.
+- `OPENAI_MODEL` - padrao `gpt-4.1-mini` (precisa suportar structured outputs).
+- `OPENAI_API_BASE` - padrao `https://api.openai.com/v1`.
+- `OPENAI_MAX_INPUT_CHARS` - quanto do fim da conversa vai pro modelo (padrao 30000).
+
+A conversa do cliente (com dados pessoais) e enviada pra OpenAI - o cliente
+precisa estar de acordo.
+
 ## Endpoints
 
 - `GET /health` - checagem simples.
