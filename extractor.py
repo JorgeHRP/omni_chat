@@ -26,8 +26,10 @@ criar um card no CRM.
 Regras:
 - Extraia somente o que o cliente (ou o atendente, repetindo o dado do \
 cliente) escreveu na conversa. Nunca invente nem complete dados.
-- empresa: razao social ou nome da empresa/marcenaria/loja do cliente. null \
-se nao aparecer.
+- empresa: somente o NOME da empresa do cliente (razao social ou nome \
+fantasia), como escrito na conversa. Se o cliente so descreve o negocio (ex.: \
+"loja de moveis em Goiania") ou se for um rotulo/titulo (ex.: "Dados da \
+empresa"), use null. null se nao aparecer.
 - documento: CNPJ ou CPF do cliente, como aparece na conversa. Se houver os \
 dois, prefira o CNPJ. null se nao aparecer.
 - email: email do cliente. null se nao aparecer.
@@ -51,6 +53,10 @@ _SCHEMA = {
         "additionalProperties": False,
     },
 }
+
+_EMPTY_VALUES = {"", "null", "none", "n/a", "na", "-", "nao informado", "não informado"}
+# Rotulos/descricoes que o modelo as vezes devolve no lugar do nome.
+_COMPANY_LABELS = ("dados da empresa", "loja de ", "marcenaria de ", "fabrica de ", "fábrica de ")
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 
@@ -128,7 +134,9 @@ async def extract_lead_fields(client: httpx.AsyncClient, messages: list[dict]) -
     raw = json.loads(resp.json()["choices"][0]["message"]["content"])
 
     def clean(value: Optional[str]) -> Optional[str]:
-        return " ".join((value or "").split()) or None
+        value = " ".join((value or "").split())
+        # O modelo as vezes devolve o texto "null" em vez do null do JSON.
+        return None if value.lower() in _EMPTY_VALUES else value or None
 
     email = clean(raw.get("email"))
     fields = {
@@ -137,6 +145,11 @@ async def extract_lead_fields(client: httpx.AsyncClient, messages: list[dict]) -
         "email": email.lower() if email and _EMAIL_RE.match(email) else None,
         "nome_completo": clean(raw.get("nome_completo")),
     }
+    if fields["empresa"] and fields["empresa"].lower().startswith(_COMPANY_LABELS):
+        fields["empresa"] = None
+    # So o primeiro nome nao serve como nome de empresa.
+    if fields["nome_completo"] and len(fields["nome_completo"].split()) < 2:
+        fields["nome_completo"] = None
     if raw.get("documento") and not fields["documento"]:
         logger.info("Documento extraido '%s' invalido (digito verificador) - descartado.", raw["documento"])
     return fields

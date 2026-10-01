@@ -97,9 +97,11 @@ async def _lead_data(client: httpx.AsyncClient, chat: dict, messages: list[dict]
     """Empresa, CNPJ/CPF e email do lead. O cadastro do cliente no Omni tem
     prioridade; o que estiver vazio vem da conversa (extractor/OpenAI).
 
-    Sem razao social mas com CPF -> empresa = nome completo do cliente, que e
-    como a equipe cadastra pessoa fisica no RD (ex.: "Adriano Parana de
-    Oliveira" + CPF)."""
+    Sem nome de empresa mas com CPF/CNPJ -> empresa = nome completo do
+    cliente, que e como a equipe cadastra no RD mesmo com CNPJ (ex.: "Adriano
+    Parana de Oliveira" + CPF, "Kaua Rodrigues de Oliveira" + CNPJ). Prefere o
+    nome completo achado na conversa - o cadastro do Omni costuma ter so o
+    nome curto."""
     data = {
         "empresa": omni_client.chat_company(chat),
         "documento": omni_client.chat_tax_document(chat),
@@ -117,8 +119,8 @@ async def _lead_data(client: httpx.AsyncClient, chat: dict, messages: list[dict]
         data.update(filled)
         data["nome_completo"] = extracted.get("nome_completo")
 
-    if not data["empresa"] and data["documento"] and len(data["documento"]) == 11:
-        data["empresa"] = omni_client.chat_customer_full_name(chat) or data.get("nome_completo")
+    if not data["empresa"] and data["documento"]:
+        data["empresa"] = data.get("nome_completo") or omni_client.chat_customer_full_name(chat)
     return data
 
 
