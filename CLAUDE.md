@@ -125,7 +125,7 @@ and `logs/app.log`.
 The client wants company / CNPJ-CPF / email taken from the chat text when the Omni customer
 record is empty (it usually is — of 18 cards on 2026-09-30 only 1 had businessName+CNPJ, 6 had
 only a CPF). `poller._lead_data` merges: Omni record first, then `extractor.extract_lead_fields`
-(OpenAI chat completions, `json_schema` structured output) fills only empty fields. Tax docs
+(OpenAI chat completions, `json_schema` structured output; model pinned to `gpt-4.1-mini` in config.py on purpose, not env-configurable) fills only empty fields. Tax docs
 must pass CPF/CNPJ check digits, emails a format check, or they are dropped. CPF but no company
 → company = customer full name (`omni_client.chat_customer_full_name`, strips numbers typed in
 the last name), matching how the sales team registers individuals in RD. Disabled when

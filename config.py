@@ -44,7 +44,8 @@ RD_CRM_ORG_TAX_DOC_FIELD_ID = os.environ.get(
 # via OpenAI, pra quando o atendente nao preencheu o cadastro no Omni. Vazio =
 # desligado.
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
+# Fixo de proposito (decisao do cliente) - nao vem do ambiente.
+OPENAI_MODEL = "gpt-4.1-mini"
 OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
 # Quanto da conversa (fim dela, em caracteres) vai pro modelo.
 OPENAI_MAX_INPUT_CHARS = int(os.environ.get("OPENAI_MAX_INPUT_CHARS", "30000"))

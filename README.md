@@ -102,9 +102,10 @@ com digito verificador valido; email so com formato valido. Sem razao social
 mas com CPF, a empresa e criada com o nome completo do cliente (padrao que a
 equipe ja usa no RD). Falha na OpenAI nao impede o card.
 
+Modelo fixo no codigo: `gpt-4.1-mini` (`config.OPENAI_MODEL`).
+
 Variaveis (EasyPanel):
 - `OPENAI_API_KEY` - vazio desliga a extracao.
-- `OPENAI_MODEL` - padrao `gpt-4.1-mini` (precisa suportar structured outputs).
 - `OPENAI_API_BASE` - padrao `https://api.openai.com/v1`.
 - `OPENAI_MAX_INPUT_CHARS` - quanto do fim da conversa vai pro modelo (padrao 30000).
 
