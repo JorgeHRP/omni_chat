@@ -190,6 +190,40 @@ async def get_deal(client: httpx.AsyncClient, deal_id: str) -> dict:
     return resp.json()
 
 
+async def fetch_deals_in_stage(client: httpx.AsyncClient, stage_id: str) -> list[dict]:
+    """Todas as negociacoes da etapa (a lista ja traz `contacts` com os
+    telefones e `user` com o dono)."""
+    deals: list[dict] = []
+    for page in range(1, 51):
+        resp = await client.get(
+            f"{config.RD_CRM_API_BASE}/deals",
+            params=_params(deal_stage_id=stage_id, limit=200, page=page),
+            timeout=60.0,
+        )
+        _raise_for_status(resp)
+        body = resp.json()
+        deals.extend(body.get("deals") or [])
+        if not body.get("has_more"):
+            break
+    return deals
+
+
+def whatsapp_phone(deal: dict) -> Optional[str]:
+    """Primeiro telefone celular dos contatos da negociacao, so digitos com
+    DDI 55. Prefere os marcados como WhatsApp. Nao usar GET /contacts?deal_id=
+    pra isso: o RD ignora o filtro e devolve contatos de outras negociacoes."""
+    phones = [p for c in deal.get("contacts") or [] for p in c.get("phones") or []]
+    phones.sort(key=lambda p: not p.get("whatsapp"))
+    for p in phones:
+        digits = re.sub(r"\D", "", p.get("phone") or "")
+        if len(digits) in (10, 11):
+            digits = "55" + digits
+        # 55 + DDD + 9 digitos comecando com 9 = celular brasileiro
+        if len(digits) == 13 and digits.startswith("55") and digits[4] == "9":
+            return digits
+    return None
+
+
 def _is_open(deal: dict) -> bool:
     """Criterio provisorio de "ativa": sem win e sem closed_at."""
     return deal.get("win") is None and not deal.get("closed_at")

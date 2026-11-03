@@ -3,8 +3,10 @@ import logging.handlers
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+import httpx
+from fastapi import FastAPI, HTTPException
 
+import cadence
 import config
 import db
 from poller import run_poll
@@ -65,3 +67,19 @@ async def poll_runs(limit: int = 20):
 @app.get("/poll/leads")
 async def poll_leads(limit: int = 50):
     return db.get_recent_processed(limit)
+
+
+@app.get("/cadence/sends")
+async def cadence_sends(limit: int = 50, include_baseline: bool = False):
+    return db.get_recent_cadence(limit, include_baseline)
+
+
+@app.post("/cadence/test")
+async def cadence_test(template_id: str, phone: str, consultor: str = "Teste"):
+    """Manda UM template pra um telefone (so digitos, com 55) - pra testar o
+    envio com o proprio numero antes de ligar a cadencia."""
+    try:
+        async with httpx.AsyncClient() as client:
+            return await cadence.send_one(client, template_id, phone, {"user": {"name": consultor}})
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc))

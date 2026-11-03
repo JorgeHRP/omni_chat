@@ -44,6 +44,31 @@ def init_db() -> None:
             )
             """
         )
+        # Um registro por (negociacao, etapa da cadencia): garante que cada
+        # template e enviado no maximo uma vez por negociacao.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cadence_sends (
+                deal_id TEXT NOT NULL,
+                stage_id TEXT NOT NULL,
+                deal_name TEXT,
+                phone TEXT,
+                action TEXT NOT NULL,
+                detail TEXT,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (deal_id, stage_id)
+            )
+            """
+        )
+        # Etapas que ja tiveram a "linha de base" gravada (ver cadence.py).
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cadence_stages_seeded (
+                stage_id TEXT PRIMARY KEY,
+                seeded_at TEXT NOT NULL
+            )
+            """
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS poll_runs (
@@ -103,6 +128,60 @@ def mark_chat_processed(
             """,
             (chat_id, phone, name, action, rd_crm_deal_id, processed_at),
         )
+
+
+def cadence_done_deal_ids(stage_id: str) -> set[str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT deal_id FROM cadence_sends WHERE stage_id = ?", (stage_id,)
+        ).fetchall()
+        return {r["deal_id"] for r in rows}
+
+
+def mark_cadence(
+    deal_id: str,
+    stage_id: str,
+    deal_name: Optional[str],
+    phone: Optional[str],
+    action: str,
+    detail: Optional[str],
+    created_at: str,
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO cadence_sends
+                (deal_id, stage_id, deal_name, phone, action, detail, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (deal_id, stage_id, deal_name, phone, action, detail, created_at),
+        )
+
+
+def is_cadence_stage_seeded(stage_id: str) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM cadence_stages_seeded WHERE stage_id = ?", (stage_id,)
+        ).fetchone()
+        return row is not None
+
+
+def mark_cadence_stage_seeded(stage_id: str, seeded_at: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO cadence_stages_seeded (stage_id, seeded_at) VALUES (?, ?)",
+            (stage_id, seeded_at),
+        )
+
+
+def get_recent_cadence(limit: int = 50, include_baseline: bool = False) -> list[dict]:
+    where = "" if include_baseline else "WHERE action != 'linha_de_base'"
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM cadence_sends {where} ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def start_run(started_at: str) -> int:

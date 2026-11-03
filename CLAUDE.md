@@ -138,6 +138,20 @@ model sometimes returns labels/descriptions or the string "null" as the company 
 The Omni customer record also has `salesPerson` (seller, with email) — unused so far, a
 possible better owner source.
 
+### WhatsApp cadence (cadence.py, added 2026-11-03)
+
+The RD automation (set up by the client, live since ~2026-10-20) moves deals in "3.Comercial
+Brasil" through stages T1º..T5º CONTATO. T1/T3/T4 are WhatsApp steps: `cadence.run_cadence()`
+runs after each poll and, for every open deal (no win/closed_at/hold) in those stages, sends the
+mapped Omni template (`CADENCE_STAGE_TEMPLATES`, stage_id:template_id) via `POST /messages`
+(`templateId`, `platformId` = digits with 55, `templateTokens`; `{{1}}` = deal owner first+last
+name). Dedup in `cadence_sends(deal_id, stage_id)`. First run per stage records the deals already
+there as `linha_de_base` without sending. Off unless `CADENCE_WHATSAPP_ENABLED=true`; capped by
+`CADENCE_MAX_SENDS_PER_RUN`. `POST /cadence/test?template_id=..&phone=..` sends one message;
+`GET /cadence/sends` lists outcomes. Phones come from `deal.contacts` in `GET /deals` — **never
+`GET /contacts?deal_id=`: RD ignores that filter and returns unrelated contacts.** Only BR mobiles
+(55+DDD+9xxxxxxxx) are sent; others are `sem_telefone`.
+
 ## Known open issues (see README.md "O que ainda falta")
 
 - "Active" deal = no `win` and no `closed_at` (provisional rule).

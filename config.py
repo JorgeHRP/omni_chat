@@ -50,6 +50,26 @@ OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
 # Quanto da conversa (fim dela, em caracteres) vai pro modelo.
 OPENAI_MAX_INPUT_CHARS = int(os.environ.get("OPENAI_MAX_INPUT_CHARS", "30000"))
 
+# Cadencia de WhatsApp: quando uma negociacao do funil entra numa etapa da
+# cadencia (T1/T3/T4 CONTATO), manda o template correspondente pelo Omni.
+# Desligado por padrao - mensagem pra cliente nao tem volta.
+CADENCE_WHATSAPP_ENABLED = os.environ.get("CADENCE_WHATSAPP_ENABLED", "false").lower() == "true"
+# "etapa_id:template_id" separados por virgula. Padrao: T1º/T3º/T4º CONTATO do
+# "3.Comercial Brasil" -> templates "IS - Teste de cadencia T1", "IS - T3
+# Cadencia", "IS - Teste de Cadencia T4" (conferidos em 03/11/2026).
+CADENCE_STAGE_TEMPLATES = dict(
+    pair.strip().split(":", 1)
+    for pair in os.environ.get(
+        "CADENCE_STAGE_TEMPLATES",
+        "6a16c675ada558002202465b:crEu3wTP9P,"
+        "6a16c69715fbf90021c23be0:u1mUaPmSA1,"
+        "6a1f5bfd5c7da5001d843a5c:kYi0wpCK41",
+    ).split(",")
+    if pair.strip()
+)
+# Trava de seguranca: no maximo N envios por execucao.
+CADENCE_MAX_SENDS_PER_RUN = int(os.environ.get("CADENCE_MAX_SENDS_PER_RUN", "50"))
+
 POLL_INTERVAL_MINUTES = int(os.environ.get("POLL_INTERVAL_MINUTES", "10"))
 INITIAL_LOOKBACK_HOURS = int(os.environ.get("INITIAL_LOOKBACK_HOURS", "2"))
 MAX_PAGES_PER_RUN = int(os.environ.get("MAX_PAGES_PER_RUN", "20"))

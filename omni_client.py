@@ -47,6 +47,43 @@ async def fetch_chat_messages(
     return resp.json()
 
 
+async def fetch_message_templates(client: httpx.AsyncClient) -> dict[str, dict]:
+    """Templates de WhatsApp cadastrados no Omni, por objectId."""
+    resp = await client.get(
+        f"{config.OMNI_CHATS_API_BASE}/message-templates",
+        headers=HEADERS,
+        params={"limit": 100},
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return {t["objectId"]: t for t in resp.json()}
+
+
+def template_token_count(template: dict) -> int:
+    """Quantas variaveis {{1}}, {{2}}... o template tem."""
+    return len(set(re.findall(r"\{\{(\d+)\}\}", template.get("text") or "")))
+
+
+async def send_template(
+    client: httpx.AsyncClient, template_id: str, phone: str, tokens: list[str]
+) -> dict:
+    """Envia um template aprovado (HSM) pro telefone via POST /messages.
+    `phone` so digitos, com DDI (ex.: 5541998765434)."""
+    resp = await client.post(
+        f"{config.OMNI_CHATS_API_BASE}/messages",
+        headers=HEADERS,
+        json={"templateId": template_id, "platformId": phone, "templateTokens": tokens},
+        timeout=30.0,
+    )
+    if resp.is_error:
+        raise httpx.HTTPStatusError(
+            f"{resp.status_code} em POST /messages: {resp.text[:500]}",
+            request=resp.request,
+            response=resp,
+        )
+    return resp.json() if resp.content else {}
+
+
 def chat_conversation_url(chat: dict) -> Optional[str]:
     chat_id = chat.get("objectId")
     if not chat_id:

@@ -9,6 +9,7 @@ from typing import Optional
 
 import httpx
 
+import cadence
 import config
 import db
 import extractor
@@ -152,7 +153,10 @@ async def run_poll() -> dict:
         return {"skipped": "ja em execucao"}
 
     async with _run_lock:
-        return await _run_poll()
+        result = await _run_poll()
+        # Separado do fluxo de leads: falha aqui nao mexe no watermark.
+        result["cadencia_whatsapp"] = await cadence.run_cadence()
+        return result
 
 
 async def _run_poll() -> dict:
