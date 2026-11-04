@@ -142,15 +142,27 @@ possible better owner source.
 
 The RD automation (set up by the client, live since ~2026-10-20) moves deals in "3.Comercial
 Brasil" through stages T1º..T5º CONTATO. T1/T3/T4 are WhatsApp steps: `cadence.run_cadence()`
-runs after each poll and, for every open deal (no win/closed_at/hold) in those stages, sends the
-mapped Omni template (`CADENCE_STAGE_TEMPLATES`, stage_id:template_id) via `POST /messages`
-(`templateId`, `platformId` = digits with 55, `templateTokens`; `{{1}}` = deal owner first+last
-name). Dedup in `cadence_sends(deal_id, stage_id)`. First run per stage records the deals already
-there as `linha_de_base` without sending. Off unless `CADENCE_WHATSAPP_ENABLED=true`; capped by
-`CADENCE_MAX_SENDS_PER_RUN`. `POST /cadence/test?template_id=..&phone=..` sends one message;
-`GET /cadence/sends` lists outcomes. Phones come from `deal.contacts` in `GET /deals` — **never
-`GET /contacts?deal_id=`: RD ignores that filter and returns unrelated contacts.** Only BR mobiles
-(55+DDD+9xxxxxxxx) are sent; others are `sem_telefone`.
+runs after each poll and, for every open deal (no win/closed_at/hold) in those stages, fires the
+Omni campaign mapped in `CADENCE_STAGE_CAMPAIGNS` (stage_id:campaign_id) for the deal's phone.
+- Campaigns "Cadencia RD T1/T3/T4 (automatica - nao apagar)" (1eAsZ7CFZ9 / j1qTmYhgS1 /
+  3eXJsE119w) were created via the campaign API on 2026-11-04 with templates crEu3wTP9P /
+  u1mUaPmSA1 / kYi0wpCK41, exit platform `AaLZ6QXSrcVH` (number 55 54 3022-5800, same one the
+  "IS - ..." campaigns use), the header image as a fixed token and `consultor` as the T4 `{{1}}`.
+  Their audience (c4GbsZpmcO) only holds Jorge's test number — never "start" these campaigns.
+- Sending = `POST campaign-api.omni.chat/v1/campaigns/{id}/test` with
+  `{"contacts":[{"fullNumber":..., "consultor":...}]}`. Tested and delivered. `/dispatch` returns
+  an id but sends nothing on a never-started campaign ("Dispatch not found"). The old
+  `POST api.omni.chat/v1/messages` returns an opaque 400 for these templates (image header /
+  buttons), with or without `integrationId` — don't use it.
+- Dedup in `cadence_sends(deal_id, stage_id)`; the row is written as `enviando` before sending so
+  a DB failure can never cause a double send. First run per stage records deals already there as
+  `linha_de_base` without sending. Off unless `CADENCE_WHATSAPP_ENABLED=true`; capped by
+  `CADENCE_MAX_SENDS_PER_RUN`. `POST /cadence/test?step=T1&phone=..` sends one message;
+  `GET /cadence/sends` lists outcomes.
+- Phones come from `deal.contacts` in `GET /deals` — **never `GET /contacts?deal_id=`: RD ignores
+  that filter and returns unrelated contacts.** Only BR mobiles (55+DDD+9xxxxxxxx) are sent.
+- EasyPanel replaces any 502 response with its "Service is not reachable" page — endpoints must
+  not return 502 for app errors.
 
 ## Known open issues (see README.md "O que ainda falta")
 

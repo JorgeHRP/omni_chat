@@ -54,16 +54,17 @@ OPENAI_MAX_INPUT_CHARS = int(os.environ.get("OPENAI_MAX_INPUT_CHARS", "30000"))
 # cadencia (T1/T3/T4 CONTATO), manda o template correspondente pelo Omni.
 # Desligado por padrao - mensagem pra cliente nao tem volta.
 CADENCE_WHATSAPP_ENABLED = os.environ.get("CADENCE_WHATSAPP_ENABLED", "false").lower() == "true"
-# "etapa_id:template_id" separados por virgula. Padrao: T1º/T3º/T4º CONTATO do
-# "3.Comercial Brasil" -> templates "IS - Teste de cadencia T1", "IS - T3
-# Cadencia", "IS - Teste de Cadencia T4" (conferidos em 03/11/2026).
-CADENCE_STAGE_TEMPLATES = dict(
+# "etapa_id:campanha_id" separados por virgula. Padrao: T1º/T3º/T4º CONTATO do
+# "3.Comercial Brasil" -> campanhas "Cadencia RD T1/T3/T4 (automatica - nao
+# apagar)" do Omni (template + imagem + numero 55 54 3022-5800), criadas em
+# 04/11/2026.
+CADENCE_STAGE_CAMPAIGNS = dict(
     pair.strip().split(":", 1)
     for pair in os.environ.get(
-        "CADENCE_STAGE_TEMPLATES",
-        "6a16c675ada558002202465b:crEu3wTP9P,"
-        "6a16c69715fbf90021c23be0:u1mUaPmSA1,"
-        "6a1f5bfd5c7da5001d843a5c:kYi0wpCK41",
+        "CADENCE_STAGE_CAMPAIGNS",
+        "6a16c675ada558002202465b:1eAsZ7CFZ9,"
+        "6a16c69715fbf90021c23be0:j1qTmYhgS1,"
+        "6a1f5bfd5c7da5001d843a5c:3eXJsE119w",
     ).split(",")
     if pair.strip()
 )

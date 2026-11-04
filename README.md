@@ -144,11 +144,11 @@ deploys.
 ## Cadencia de WhatsApp (T1/T3/T4)
 
 Depois de cada polling, `cadence.py` olha as etapas T1º, T3º e T4º CONTATO do
-funil e manda pelo Omni o template de WhatsApp de cada etapa pras negociacoes
+funil e dispara pelo Omni a campanha "Cadencia RD Tx (automatica - nao apagar)" de cada etapa pras negociacoes
 abertas que entraram nela (uma vez por negociacao e etapa). As que ja estavam
 na etapa quando o envio foi ligado ficam como `linha_de_base` e nao recebem.
 Liga com `CADENCE_WHATSAPP_ENABLED=true`. Teste antes no seu numero:
-`curl -X POST "localhost:8000/cadence/test?template_id=crEu3wTP9P&phone=55DDDNUMERO"`.
+`curl -X POST "localhost:8000/cadence/test?step=T1&phone=55DDDNUMERO"`.
 Resultado dos envios: `GET /cadence/sends`.
 
 ## O que ainda falta antes de considerar 100% pronto

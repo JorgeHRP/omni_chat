@@ -75,11 +75,18 @@ async def cadence_sends(limit: int = 50, include_baseline: bool = False):
 
 
 @app.post("/cadence/test")
-async def cadence_test(template_id: str, phone: str, consultor: str = "Teste"):
-    """Manda UM template pra um telefone (so digitos, com 55) - pra testar o
-    envio com o proprio numero antes de ligar a cadencia."""
+async def cadence_test(step: str, phone: str, consultor: str = "Teste"):
+    """Dispara UMA mensagem da cadencia (step = T1, T3 ou T4) pra um telefone
+    (so digitos, com 55) - pra testar com o proprio numero."""
+    stages = {"T1": 0, "T3": 1, "T4": 2}
+    if step.upper() not in stages:
+        raise HTTPException(status_code=422, detail="step deve ser T1, T3 ou T4")
+    campaign_id = list(config.CADENCE_STAGE_CAMPAIGNS.values())[stages[step.upper()]]
     try:
         async with httpx.AsyncClient() as client:
-            return await cadence.send_one(client, template_id, phone, {"user": {"name": consultor}})
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+            dispatch_id = await cadence.send_one(client, campaign_id, phone, consultor)
+            return {"dispatch_id": dispatch_id, "campanha": campaign_id}
+    except httpx.HTTPError as exc:
+        # 400, nao 502: o EasyPanel troca qualquer 502 pela pagina
+        # "Service is not reachable" e esconde o erro.
+        raise HTTPException(status_code=400, detail=str(exc))

@@ -47,41 +47,31 @@ async def fetch_chat_messages(
     return resp.json()
 
 
-async def fetch_message_templates(client: httpx.AsyncClient) -> dict[str, dict]:
-    """Templates de WhatsApp cadastrados no Omni, por objectId."""
-    resp = await client.get(
-        f"{config.OMNI_CHATS_API_BASE}/message-templates",
-        headers=HEADERS,
-        params={"limit": 100},
-        timeout=30.0,
-    )
-    resp.raise_for_status()
-    return {t["objectId"]: t for t in resp.json()}
+CAMPAIGN_API_BASE = "https://campaign-api.omni.chat/v1"
 
 
-def template_token_count(template: dict) -> int:
-    """Quantas variaveis {{1}}, {{2}}... o template tem."""
-    return len(set(re.findall(r"\{\{(\d+)\}\}", template.get("text") or "")))
-
-
-async def send_template(
-    client: httpx.AsyncClient, template_id: str, phone: str, tokens: list[str]
-) -> dict:
-    """Envia um template aprovado (HSM) pro telefone via POST /messages.
-    `phone` so digitos, com DDI (ex.: 5541998765434)."""
+async def dispatch_campaign(
+    client: httpx.AsyncClient, campaign_id: str, phone: str, consultor: str
+) -> str:
+    """Dispara a campanha pra um contato agora. Usa POST /campaigns/{id}/test:
+    o /dispatch aceita o pedido mas nao envia nada numa campanha que nunca foi
+    iniciada (testado 04/11/2026 - "Dispatch not found"); o /test envia na hora
+    e o Omni registra normal (status em GET /dispatches/{id}). `phone` so
+    digitos com DDI."""
     resp = await client.post(
-        f"{config.OMNI_CHATS_API_BASE}/messages",
+        f"{CAMPAIGN_API_BASE}/campaigns/{campaign_id}/test",
         headers=HEADERS,
-        json={"templateId": template_id, "platformId": phone, "templateTokens": tokens},
+        json={"contacts": [{"fullNumber": phone, "consultor": consultor}]},
         timeout=30.0,
     )
     if resp.is_error:
         raise httpx.HTTPStatusError(
-            f"{resp.status_code} em POST /messages: {resp.text[:500]}",
+            f"{resp.status_code} em POST /campaigns/{campaign_id}/test: {resp.text[:500]}",
             request=resp.request,
             response=resp,
         )
-    return resp.json() if resp.content else {}
+    dispatches = resp.json().get("dispatches") or []
+    return dispatches[0]["id"] if dispatches else ""
 
 
 def chat_conversation_url(chat: dict) -> Optional[str]:

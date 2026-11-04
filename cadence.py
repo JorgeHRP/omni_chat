@@ -1,8 +1,11 @@
 """Cadencia de WhatsApp: a automacao do RD CRM move as negociacoes do funil
 "3.Comercial Brasil" pelas etapas T1º..T5º CONTATO. Nas etapas T1, T3 e T4 o
 contato e por WhatsApp - aqui, quando uma negociacao aberta aparece numa
-dessas etapas, mandamos o template correspondente pelo Omni
-(`CADENCE_STAGE_TEMPLATES`).
+dessas etapas, disparamos a campanha do Omni da etapa
+(`CADENCE_STAGE_CAMPAIGNS`). Cada campanha ("Cadencia RD T1/T3/T4 (automatica -
+nao apagar)", criadas em 04/11/2026) ja tem o template, a imagem do cabecalho e o
+numero de saida 55 54 3022-5800; o `{{1}}` do T4 vem do campo `consultor`.
+POST /v1/messages (API antiga) responde 400 pra esses templates - nao usar.
 
 Cada (negociacao, etapa) e gravado uma unica vez em `cadence_sends`, com
 `action`: `enviado`, `enviando` (envio saiu mas nao confirmou), `sem_telefone`, `erro` (nao e reenviado sozinho - apague a
@@ -39,29 +42,13 @@ def _owner_name(deal: dict) -> str:
     return parts[0] if len(parts) == 1 else f"{parts[0]} {parts[-1]}"
 
 
-def _tokens(template: dict, deal: dict) -> list[str]:
-    count = omni_client.template_token_count(template)
-    if count == 0:
-        return []
-    if count == 1:
-        return [_owner_name(deal)]
-    raise ValueError(f"template {template.get('title')!r} tem {count} variaveis - so sei preencher {{{{1}}}}")
-
-
 def _is_active(deal: dict) -> bool:
     return deal.get("win") is None and not deal.get("closed_at") and not deal.get("hold")
 
 
-async def send_one(
-    client: httpx.AsyncClient, template_id: str, phone: str, deal: Optional[dict] = None
-) -> dict:
-    """Envia um template pra um telefone (usado tambem no teste manual)."""
-    templates = await omni_client.fetch_message_templates(client)
-    template = templates.get(template_id)
-    if not template:
-        raise ValueError(f"template {template_id} nao existe no Omni")
-    tokens = _tokens(template, deal or {})
-    return await omni_client.send_template(client, template_id, phone, tokens)
+async def send_one(client: httpx.AsyncClient, campaign_id: str, phone: str, consultor: str) -> dict:
+    """Dispara a campanha pra um telefone (usado tambem no teste manual)."""
+    return await omni_client.dispatch_campaign(client, campaign_id, phone, consultor)
 
 
 async def run_cadence() -> dict:
@@ -71,16 +58,9 @@ async def run_cadence() -> dict:
 
     try:
         async with httpx.AsyncClient() as client:
-            templates = await omni_client.fetch_message_templates(client)
             sends_left = config.CADENCE_MAX_SENDS_PER_RUN
 
-            for stage_id, template_id in config.CADENCE_STAGE_TEMPLATES.items():
-                template = templates.get(template_id)
-                if not template or template.get("status") != "READY":
-                    logger.error("Template %s da etapa %s nao existe ou nao esta READY no Omni - pulando etapa.", template_id, stage_id)
-                    stats["erros"] += 1
-                    continue
-
+            for stage_id, campaign_id in config.CADENCE_STAGE_CAMPAIGNS.items():
                 deals = [d for d in await rdcrm_client.fetch_deals_in_stage(client, stage_id) if _is_active(d)]
                 done = db.cadence_done_deal_ids(stage_id)
                 new_deals = [d for d in deals if d["_id"] not in done]
@@ -110,10 +90,10 @@ async def run_cadence() -> dict:
                     # "enviando" e nunca reenvia (melhor perder do que duplicar).
                     db.mark_cadence(deal_id, stage_id, name, phone, "enviando", None, _now())
                     try:
-                        result = await omni_client.send_template(client, template_id, phone, _tokens(template, deal))
-                        db.mark_cadence(deal_id, stage_id, name, phone, "enviado", str(result.get("objectId") or ""), _now())
+                        dispatch_id = await omni_client.dispatch_campaign(client, campaign_id, phone, _owner_name(deal))
+                        db.mark_cadence(deal_id, stage_id, name, phone, "enviado", dispatch_id, _now())
                         stats["enviados"] += 1
-                        logger.info("Cadencia: template %r enviado pra %s (%s, negociacao %s).", template.get("title"), name, phone, deal_id)
+                        logger.info("Cadencia: campanha %s disparada pra %s (%s, negociacao %s, dispatch %s).", campaign_id, name, phone, deal_id, dispatch_id)
                     except Exception as exc:  # noqa: BLE001 - um envio ruim nao para os outros
                         db.mark_cadence(deal_id, stage_id, name, phone, "erro", str(exc)[:500], _now())
                         stats["erros"] += 1
