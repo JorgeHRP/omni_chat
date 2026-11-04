@@ -254,3 +254,9 @@ def get_recent_runs(limit: int = 20) -> list[dict]:
             "SELECT * FROM poll_runs ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# Em producao grava no Supabase: substitui todas as funcoes acima pelas de
+# db_supabase.py (mesmos nomes e assinaturas).
+if config.SUPABASE_URL and config.SUPABASE_KEY:
+    from db_supabase import *  # noqa: E402,F401,F403

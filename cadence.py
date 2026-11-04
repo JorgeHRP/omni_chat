@@ -5,7 +5,7 @@ dessas etapas, mandamos o template correspondente pelo Omni
 (`CADENCE_STAGE_TEMPLATES`).
 
 Cada (negociacao, etapa) e gravado uma unica vez em `cadence_sends`, com
-`action`: `enviado`, `sem_telefone`, `erro` (nao e reenviado sozinho - apague a
+`action`: `enviado`, `enviando` (envio saiu mas nao confirmou), `sem_telefone`, `erro` (nao e reenviado sozinho - apague a
 linha pra tentar de novo) ou `linha_de_base`.
 
 Linha de base: na primeira execucao com o envio ligado, as negociacoes que JA
@@ -105,6 +105,10 @@ async def run_cadence() -> dict:
                         logger.warning("Cadencia: negociacao %s (%s) sem celular - nao enviado.", deal_id, name)
                         continue
                     sends_left -= 1
+                    # Grava ANTES de enviar: se o banco falhar, nao envia; se o
+                    # envio sair mas a atualizacao falhar, a linha fica
+                    # "enviando" e nunca reenvia (melhor perder do que duplicar).
+                    db.mark_cadence(deal_id, stage_id, name, phone, "enviando", None, _now())
                     try:
                         result = await omni_client.send_template(client, template_id, phone, _tokens(template, deal))
                         db.mark_cadence(deal_id, stage_id, name, phone, "enviado", str(result.get("objectId") or ""), _now())

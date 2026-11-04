@@ -50,7 +50,7 @@ and `logs/app.log`.
   not kill the scheduler.
 - **omni_client.py / rdcrm_client.py** — thin `httpx` wrappers. No shared client; `run_poll`
   opens one `httpx.AsyncClient` and passes it down.
-- **db.py** — raw `sqlite3`, no ORM. Three tables: `poll_state` (single-row watermark),
+- **db.py** — raw `sqlite3`, no ORM. When `SUPABASE_URL` + a key (`SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_KEY`/...) are set, every function is replaced by `db_supabase.py` (same names, PostgREST via `httpx`, tables `omnichat_*`: poll_state, processed_chats, poll_runs existed since 2026-10-17 (that Supabase version was never pushed to GitHub — a deploy of main on 2026-10-20 silently fell back to SQLite); cadence tables are in `supabase_schema.sql`). Production uses Supabase because EasyPanel volumes were not kept; SQLite is for local dev. Three tables: `poll_state` (single-row watermark),
   `processed_chats` (dedup + per-lead outcome), `poll_runs` (per-execution stats).
 - **config.py** — all configuration via env vars, loaded from a repo-root `.env` in dev and
   from the platform environment in production (`load_dotenv` silently no-ops when `.env` is
@@ -83,7 +83,7 @@ and `logs/app.log`.
   is re-fetched next run (dedup prevents double deals).
 - `run_poll` is guarded by an `asyncio.Lock` — a manual `POST /poll/run` while a run is in
   progress returns `{"skipped": "ja em execucao"}` instead of racing it.
-- **This means `data/` must be a persistent volume.** Losing `data/leadsync.db` resets the
+- **This means the DB must persist** (Supabase in production; with SQLite, `data/` must be a persistent volume). Losing `data/leadsync.db` resets the
   watermark and the dedup history — risk of reprocessing / duplicate deals.
 
 ### Deploy notes

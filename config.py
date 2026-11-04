@@ -74,6 +74,19 @@ POLL_INTERVAL_MINUTES = int(os.environ.get("POLL_INTERVAL_MINUTES", "10"))
 INITIAL_LOOKBACK_HOURS = int(os.environ.get("INITIAL_LOOKBACK_HOURS", "2"))
 MAX_PAGES_PER_RUN = int(os.environ.get("MAX_PAGES_PER_RUN", "20"))
 
+# Persistencia no Supabase (tabelas leadsync_* - ver supabase_schema.sql).
+# Sem SUPABASE_URL cai no SQLite local em data/ (bom pra dev; em producao o
+# arquivo some a cada deploy). Use a chave service_role (a anon esbarra em RLS).
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = next(
+    (
+        os.environ[name]
+        for name in ("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_ANON_KEY")
+        if os.environ.get(name)
+    ),
+    "",
+)
+
 DATA_DIR = Path(__file__).resolve().parent / "data"
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 DB_PATH = DATA_DIR / "leadsync.db"
