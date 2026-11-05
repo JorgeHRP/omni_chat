@@ -158,6 +158,13 @@ def mark_cadence(
         )
 
 
+def delete_cadence(deal_id: str, stage_id: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM cadence_sends WHERE deal_id = ? AND stage_id = ?", (deal_id, stage_id)
+        )
+
+
 def is_cadence_stage_seeded(stage_id: str) -> bool:
     with get_connection() as conn:
         row = conn.execute(

@@ -144,6 +144,15 @@ def is_cadence_stage_seeded(stage_id: str) -> bool:
     return bool(_get("omnichat_cadence_stages_seeded", select="stage_id", stage_id=f"eq.{stage_id}"))
 
 
+def delete_cadence(deal_id: str, stage_id: str) -> None:
+    _check(
+        _client.delete(
+            f"{_BASE}/omnichat_cadence_sends",
+            params={"deal_id": f"eq.{deal_id}", "stage_id": f"eq.{stage_id}"},
+        )
+    )
+
+
 def mark_cadence_stage_seeded(stage_id: str, seeded_at: str) -> None:
     _upsert(
         "omnichat_cadence_stages_seeded",

@@ -16,6 +16,27 @@ HEADERS = {
 }
 
 
+class OmniAuthError(RuntimeError):
+    """O Omni recusou a chave (x-api-key/x-api-secret revogada ou trocada)."""
+
+
+# Com chave invalida a api.omni.chat responde HTTP 200 com o corpo em texto
+# '400 - {"code":209,"error":"Invalid session token"}' (visto 04-05/11/2026);
+# o resp.json() quebrava com "Extra data: line 1 column 5".
+_EMBEDDED_ERROR = re.compile(r"^\s*(\d{3}) - (.*)$", re.S)
+
+
+def _json(resp: httpx.Response, what: str):
+    resp.raise_for_status()
+    m = _EMBEDDED_ERROR.match(resp.text)
+    if m:
+        body = m.group(2)[:300]
+        if "Invalid session token" in body or '"code":209' in body:
+            raise OmniAuthError(f"Omni recusou a chave em {what}: {body}")
+        raise RuntimeError(f"Omni respondeu erro {m.group(1)} em {what}: {body}")
+    return resp.json()
+
+
 async def fetch_chats_page(
     client: httpx.AsyncClient, updated_at_gt: str, limit: int = 100
 ) -> list[dict]:
@@ -29,8 +50,7 @@ async def fetch_chats_page(
         },
         timeout=30.0,
     )
-    resp.raise_for_status()
-    return resp.json()
+    return _json(resp, "GET /chats")
 
 
 async def fetch_chat_messages(
@@ -43,8 +63,7 @@ async def fetch_chat_messages(
         params={"limit": limit, "order.createdAt": "ASC"},
         timeout=30.0,
     )
-    resp.raise_for_status()
-    return resp.json()
+    return _json(resp, f"GET /chats/{chat_id}/messages")
 
 
 CAMPAIGN_API_BASE = "https://campaign-api.omni.chat/v1"
@@ -64,6 +83,8 @@ async def dispatch_campaign(
         json={"contacts": [{"fullNumber": phone, "consultor": consultor}]},
         timeout=30.0,
     )
+    if resp.status_code in (401, 403):
+        raise OmniAuthError(f"Omni recusou a chave em POST /campaigns/{campaign_id}/test: {resp.text[:300]}")
     if resp.is_error:
         raise httpx.HTTPStatusError(
             f"{resp.status_code} em POST /campaigns/{campaign_id}/test: {resp.text[:500]}",

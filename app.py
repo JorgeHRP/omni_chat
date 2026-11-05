@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 import cadence
 import config
 import db
+import omni_client
 from poller import run_poll
 
 config.LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -86,7 +87,7 @@ async def cadence_test(step: str, phone: str, consultor: str = "Teste"):
         async with httpx.AsyncClient() as client:
             dispatch_id = await cadence.send_one(client, campaign_id, phone, consultor)
             return {"dispatch_id": dispatch_id, "campanha": campaign_id}
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, omni_client.OmniAuthError) as exc:
         # 400, nao 502: o EasyPanel troca qualquer 502 pela pagina
         # "Service is not reachable" e esconde o erro.
         raise HTTPException(status_code=400, detail=str(exc))

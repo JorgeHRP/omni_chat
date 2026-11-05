@@ -163,6 +163,19 @@ Omni campaign mapped in `CADENCE_STAGE_CAMPAIGNS` (stage_id:campaign_id) for the
   that filter and returns unrelated contacts.** Only BR mobiles (55+DDD+9xxxxxxxx) are sent.
 - EasyPanel replaces any 502 response with its "Service is not reachable" page — endpoints must
   not return 502 for app errors.
+- **Revoked Omni key** (seen 2026-11-04 ~12:50 UTC on): `api.omni.chat` answers HTTP 200 with a text
+  body `400 - {"code":209,"error":"Invalid session token"}`; campaign/whatsapp APIs answer 403
+  "explicit deny". `omni_client._json` turns this into `OmniAuthError` (it used to surface as
+  `Extra data: line 1 column 5`). In the cadence an auth refusal deletes the `enviando` row
+  (nothing was sent) and stops the run, so the deal is retried once the key works again.
+- **Open (2026-11-05, client feedback):** the customer's reply to a cadence message goes to the
+  number's default bot ("Mobi" / "[PT] Bot LATAM – SALES E MKT") and is distributed at random.
+  The client wants it in the Omni wallet ("carteira") of the RD deal owner. Idea: before sending,
+  set the Omni customer's `salesPerson` to the owner's Omni user (customer-services.omni.chat
+  `PUT /v1/customers/{objectId}`), then check whether the bot respects the wallet. Omni routing
+  rules (`/rules`) can target a campaign but send everyone to one fixed user/team/bot.
+- Deals already in T1/T3/T4 at activation are `linha_de_base` (193 T1, 49 T3, 76 T4) and never
+  get the message; moving a deal out and back into the same stage does not resend either.
 
 ## Known open issues (see README.md "O que ainda falta")
 

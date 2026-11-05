@@ -9,7 +9,8 @@ POST /v1/messages (API antiga) responde 400 pra esses templates - nao usar.
 
 Cada (negociacao, etapa) e gravado uma unica vez em `cadence_sends`, com
 `action`: `enviado`, `enviando` (envio saiu mas nao confirmou), `sem_telefone`, `erro` (nao e reenviado sozinho - apague a
-linha pra tentar de novo) ou `linha_de_base`.
+linha pra tentar de novo; recusa de chave do Omni nao vira `erro`, a linha e
+apagada e a negociacao volta a ser tentada) ou `linha_de_base`.
 
 Linha de base: na primeira execucao com o envio ligado, as negociacoes que JA
 estavam em cada etapa sao gravadas como `linha_de_base` sem mandar nada - so
@@ -94,6 +95,14 @@ async def run_cadence() -> dict:
                         db.mark_cadence(deal_id, stage_id, name, phone, "enviado", dispatch_id, _now())
                         stats["enviados"] += 1
                         logger.info("Cadencia: campanha %s disparada pra %s (%s, negociacao %s, dispatch %s).", campaign_id, name, phone, deal_id, dispatch_id)
+                    except omni_client.OmniAuthError as exc:
+                        # Recusado na autenticacao = nada saiu. Apaga a linha
+                        # pra negociacao ser tentada de novo quando a chave
+                        # voltar, e para: os proximos envios falhariam igual.
+                        db.delete_cadence(deal_id, stage_id)
+                        stats["erro_geral"] = str(exc)[:300]
+                        logger.error("Cadencia parada: %s", exc)
+                        return stats
                     except Exception as exc:  # noqa: BLE001 - um envio ruim nao para os outros
                         db.mark_cadence(deal_id, stage_id, name, phone, "erro", str(exc)[:500], _now())
                         stats["erros"] += 1
