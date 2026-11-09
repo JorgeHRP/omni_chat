@@ -56,15 +56,16 @@ OPENAI_MAX_INPUT_CHARS = int(os.environ.get("OPENAI_MAX_INPUT_CHARS", "30000"))
 CADENCE_WHATSAPP_ENABLED = os.environ.get("CADENCE_WHATSAPP_ENABLED", "false").lower() == "true"
 # "etapa_id:campanha_id" separados por virgula. Padrao: T1º/T3º/T4º CONTATO do
 # "3.Comercial Brasil" -> campanhas "Cadencia RD T1/T3/T4 (automatica - nao
-# apagar)" do Omni (template + imagem + numero 55 54 3022-5800), criadas em
-# 04/11/2026.
+# apagar)" do Omni (template + imagem + numero 55 54 3022-5800). As "v2" foram
+# recriadas em 08/11/2026 com a chave nova: a campanha fica presa ao usuario da
+# chave que a criou, e as de 04/11 pararam de enviar quando a chave foi trocada.
 CADENCE_STAGE_CAMPAIGNS = dict(
     pair.strip().split(":", 1)
     for pair in os.environ.get(
         "CADENCE_STAGE_CAMPAIGNS",
-        "6a16c675ada558002202465b:1eAsZ7CFZ9,"
-        "6a16c69715fbf90021c23be0:j1qTmYhgS1,"
-        "6a1f5bfd5c7da5001d843a5c:3eXJsE119w",
+        "6a16c675ada558002202465b:hZ24VxW1wS,"
+        "6a16c69715fbf90021c23be0:KPG4dpM3q3,"
+        "6a1f5bfd5c7da5001d843a5c:kKI1Z6sq3E",
     ).split(",")
     if pair.strip()
 )

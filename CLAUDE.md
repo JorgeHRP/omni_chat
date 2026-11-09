@@ -144,11 +144,22 @@ The RD automation (set up by the client, live since ~2026-10-20) moves deals in 
 Brasil" through stages T1º..T5º CONTATO. T1/T3/T4 are WhatsApp steps: `cadence.run_cadence()`
 runs after each poll and, for every open deal (no win/closed_at/hold) in those stages, fires the
 Omni campaign mapped in `CADENCE_STAGE_CAMPAIGNS` (stage_id:campaign_id) for the deal's phone.
-- Campaigns "Cadencia RD T1/T3/T4 (automatica - nao apagar)" (1eAsZ7CFZ9 / j1qTmYhgS1 /
+- Campaigns "Cadencia RD T1/T3/T4 (automatica - nao apagar)" (old ids 1eAsZ7CFZ9 / j1qTmYhgS1 /
   3eXJsE119w) were created via the campaign API on 2026-11-04 with templates crEu3wTP9P /
   u1mUaPmSA1 / kYi0wpCK41, exit platform `AaLZ6QXSrcVH` (number 55 54 3022-5800, same one the
   "IS - ..." campaigns use), the header image as a fixed token and `consultor` as the T4 `{{1}}`.
   Their audience (c4GbsZpmcO) only holds Jorge's test number — never "start" these campaigns.
+- **A campaign is bound to the Omni user of the API key that created it.** After the key swap
+  (2026-11-08) the 2026-11-04 campaigns still accepted `/test` (200 + dispatch id) but every
+  dispatch ended `OUTGOING_ERROR` / `CHANNEL_USER_NOT_FOUND` ("Object 6w30PhhUYQcA not found").
+  Recreated with the new key as "Cadencia RD T1/T3/T4 v2" (hZ24VxW1wS / KPG4dpM3q3 / kKI1Z6sq3E,
+  createdBy KVi0LlXUSFq2): `POST /campaigns {name,type:"audience-based",audience}` then
+  `POST /campaigns/{id}/channels {platform,template:{id},tokens,forceSend:true}`. T1/T3 test
+  → `OUTGOING_SENT`; T4 test got error 1004 (Meta usage/engagement policy — 3 marketing messages
+  to the same number within a minute), retest later. **Swapping the key again = recreate them.**
+- `dispatch_campaign` now polls `GET /dispatches/{id}` (~16s) after `/test`: `OUTGOING_ERROR` →
+  `DispatchError` (deal marked `erro`), except `CHANNEL_USER_NOT_FOUND` → `OmniAuthError` (row
+  deleted, run stops, retried later). Still pending after the wait → counted as sent.
 - Sending = `POST campaign-api.omni.chat/v1/campaigns/{id}/test` with
   `{"contacts":[{"fullNumber":..., "consultor":...}]}`. Tested and delivered. `/dispatch` returns
   an id but sends nothing on a never-started campaign ("Dispatch not found"). The old

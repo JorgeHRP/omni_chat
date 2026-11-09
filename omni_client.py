@@ -2,6 +2,7 @@
 vivo em 01/09/2026. Ver README.md deste servico pra contexto de como essa API
 foi encontrada e o que ja foi confirmado/testado."""
 
+import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -92,7 +93,47 @@ async def dispatch_campaign(
             response=resp,
         )
     dispatches = resp.json().get("dispatches") or []
-    return dispatches[0]["id"] if dispatches else ""
+    if not dispatches:
+        raise DispatchError(f"POST /campaigns/{campaign_id}/test nao devolveu dispatch: {resp.text[:300]}")
+    dispatch_id = dispatches[0]["id"]
+    await _wait_dispatch(client, dispatch_id)
+    return dispatch_id
+
+
+class DispatchError(RuntimeError):
+    """O Omni aceitou o disparo mas a mensagem nao saiu (OUTGOING_ERROR)."""
+
+
+# Statuses que ainda nao sao resultado final do disparo.
+_DISPATCH_PENDING = {"CREATED", "QUEUED", "OUTGOING_CREATED"}
+
+
+async def _wait_dispatch(client: httpx.AsyncClient, dispatch_id: str, tries: int = 8) -> None:
+    """O /test responde 200 mesmo quando o envio falha logo depois (ex.:
+    campanha criada por um usuario/chave que nao existe mais ->
+    CHANNEL_USER_NOT_FOUND, visto 08/11/2026). Confere o status por alguns
+    segundos; se continuar pendente, considera enviado."""
+    for _ in range(tries):
+        await asyncio.sleep(2)
+        resp = await client.get(f"{CAMPAIGN_API_BASE}/dispatches/{dispatch_id}", headers=HEADERS, timeout=30.0)
+        if resp.status_code in (401, 403):
+            raise OmniAuthError(f"Omni recusou a chave em GET /dispatches/{dispatch_id}: {resp.text[:300]}")
+        if resp.is_error:
+            continue
+        body = resp.json()
+        status = body.get("status") or ""
+        if status in _DISPATCH_PENDING:
+            continue
+        if "ERROR" not in status:
+            return
+        err = body.get("error") or {}
+        msg = f"disparo {dispatch_id} {status}: {err.get('reason') or err.get('code')} - {err.get('message')}"
+        # Problema da campanha, nao do contato: nada vai sair ate recriar a
+        # campanha com a chave atual. Tratado como chave recusada (a cadencia
+        # para e a negociacao e tentada de novo depois).
+        if err.get("reason") == "CHANNEL_USER_NOT_FOUND":
+            raise OmniAuthError(f"campanha presa a um usuario do Omni que nao existe mais, recrie com a chave atual ({msg})")
+        raise DispatchError(msg)
 
 
 def chat_conversation_url(chat: dict) -> Optional[str]:

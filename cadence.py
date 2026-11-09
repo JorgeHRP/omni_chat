@@ -47,7 +47,7 @@ def _is_active(deal: dict) -> bool:
     return deal.get("win") is None and not deal.get("closed_at") and not deal.get("hold")
 
 
-async def send_one(client: httpx.AsyncClient, campaign_id: str, phone: str, consultor: str) -> dict:
+async def send_one(client: httpx.AsyncClient, campaign_id: str, phone: str, consultor: str) -> str:
     """Dispara a campanha pra um telefone (usado tambem no teste manual)."""
     return await omni_client.dispatch_campaign(client, campaign_id, phone, consultor)
 
