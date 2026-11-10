@@ -69,6 +69,10 @@ CADENCE_STAGE_CAMPAIGNS = dict(
     ).split(",")
     if pair.strip()
 )
+# Depois de enviar, passa a conversa do Omni pro atendente que e dono da
+# negociacao no RD (carteira dele), pra resposta do cliente nao cair no bot
+# e ser distribuida aleatoriamente (pedido do cliente, 04 e 09/11/2026).
+CADENCE_ROUTE_TO_OWNER = os.environ.get("CADENCE_ROUTE_TO_OWNER", "true").lower() == "true"
 # Trava de seguranca: no maximo N envios por execucao.
 CADENCE_MAX_SENDS_PER_RUN = int(os.environ.get("CADENCE_MAX_SENDS_PER_RUN", "50"))
 
@@ -76,7 +80,7 @@ POLL_INTERVAL_MINUTES = int(os.environ.get("POLL_INTERVAL_MINUTES", "10"))
 INITIAL_LOOKBACK_HOURS = int(os.environ.get("INITIAL_LOOKBACK_HOURS", "2"))
 MAX_PAGES_PER_RUN = int(os.environ.get("MAX_PAGES_PER_RUN", "20"))
 
-# Persistencia no Supabase (tabelas leadsync_* - ver supabase_schema.sql).
+# Persistencia no Supabase (tabelas omnichat_* - ver supabase_schema.sql).
 # Sem SUPABASE_URL cai no SQLite local em data/ (bom pra dev; em producao o
 # arquivo some a cada deploy). Use a chave service_role (a anon esbarra em RLS).
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")

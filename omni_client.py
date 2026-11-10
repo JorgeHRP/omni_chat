@@ -72,12 +72,13 @@ CAMPAIGN_API_BASE = "https://campaign-api.omni.chat/v1"
 
 async def dispatch_campaign(
     client: httpx.AsyncClient, campaign_id: str, phone: str, consultor: str
-) -> str:
+) -> tuple[str, Optional[str]]:
     """Dispara a campanha pra um contato agora. Usa POST /campaigns/{id}/test:
     o /dispatch aceita o pedido mas nao envia nada numa campanha que nunca foi
     iniciada (testado 04/11/2026 - "Dispatch not found"); o /test envia na hora
     e o Omni registra normal (status em GET /dispatches/{id}). `phone` so
-    digitos com DDI."""
+    digitos com DDI. Devolve (dispatch_id, chat_id) - chat_id = conversa do
+    Omni onde a mensagem caiu, None se o Omni ainda nao informou."""
     resp = await client.post(
         f"{CAMPAIGN_API_BASE}/campaigns/{campaign_id}/test",
         headers=HEADERS,
@@ -96,8 +97,8 @@ async def dispatch_campaign(
     if not dispatches:
         raise DispatchError(f"POST /campaigns/{campaign_id}/test nao devolveu dispatch: {resp.text[:300]}")
     dispatch_id = dispatches[0]["id"]
-    await _wait_dispatch(client, dispatch_id)
-    return dispatch_id
+    body = await _wait_dispatch(client, dispatch_id)
+    return dispatch_id, ((body or {}).get("chat") or {}).get("id")
 
 
 class DispatchError(RuntimeError):
@@ -108,11 +109,13 @@ class DispatchError(RuntimeError):
 _DISPATCH_PENDING = {"CREATED", "QUEUED", "OUTGOING_CREATED"}
 
 
-async def _wait_dispatch(client: httpx.AsyncClient, dispatch_id: str, tries: int = 8) -> None:
+async def _wait_dispatch(client: httpx.AsyncClient, dispatch_id: str, tries: int = 8) -> Optional[dict]:
     """O /test responde 200 mesmo quando o envio falha logo depois (ex.:
     campanha criada por um usuario/chave que nao existe mais ->
     CHANNEL_USER_NOT_FOUND, visto 08/11/2026). Confere o status por alguns
-    segundos; se continuar pendente, considera enviado."""
+    segundos; se continuar pendente, considera enviado. Devolve o ultimo
+    corpo do disparo que deu certo (tem `chat.id`), ou None se nao finalizou."""
+    sent: Optional[dict] = None
     for _ in range(tries):
         await asyncio.sleep(2)
         resp = await client.get(f"{CAMPAIGN_API_BASE}/dispatches/{dispatch_id}", headers=HEADERS, timeout=30.0)
@@ -125,7 +128,11 @@ async def _wait_dispatch(client: httpx.AsyncClient, dispatch_id: str, tries: int
         if status in _DISPATCH_PENDING:
             continue
         if "ERROR" not in status:
-            return
+            # Saiu. Espera mais um pouco so se o Omni ainda nao disse a conversa.
+            sent = body
+            if body.get("chat"):
+                return body
+            continue
         err = body.get("error") or {}
         msg = f"disparo {dispatch_id} {status}: {err.get('reason') or err.get('code')} - {err.get('message')}"
         # Problema da campanha, nao do contato: nada vai sair ate recriar a
@@ -134,6 +141,53 @@ async def _wait_dispatch(client: httpx.AsyncClient, dispatch_id: str, tries: int
         if err.get("reason") == "CHANNEL_USER_NOT_FOUND":
             raise OmniAuthError(f"campanha presa a um usuario do Omni que nao existe mais, recrie com a chave atual ({msg})")
         raise DispatchError(msg)
+    return sent
+
+
+_BOT_EMAIL_SUFFIXES = ("omni.bot", "bot.omni.chat")
+
+
+async def fetch_users(client: httpx.AsyncClient) -> list[dict]:
+    """Atendentes ativos do Omni (sem bots nem desativados). O /users devolve
+    no maximo 100 por vez - pagina por createdAt."""
+    users: list[dict] = []
+    after = "2000-01-01T00:00:00.000Z"
+    for _ in range(50):
+        resp = await client.get(
+            f"{config.OMNI_CHATS_API_BASE}/users",
+            headers=HEADERS,
+            params={"limit": 100, "order.createdAt": "ASC", "createdAt.gt": after},
+            timeout=30.0,
+        )
+        page = _json(resp, "GET /users")
+        for u in page:
+            email = (u.get("email") or "").strip().lower()
+            if u.get("disabled") or email.endswith(_BOT_EMAIL_SUFFIXES):
+                continue
+            users.append(u)
+        if len(page) < 100:
+            break
+        after = page[-1]["createdAt"]
+    return users
+
+
+async def route_chat_to_user(client: httpx.AsyncClient, chat_id: str, user_id: str) -> None:
+    """Passa a conversa pro atendente (carteira dele) - POST /chats/{id}/route."""
+    resp = await client.post(
+        f"{config.OMNI_CHATS_API_BASE}/chats/{chat_id}/route",
+        headers=HEADERS,
+        json={"type": "USER", "userId": user_id},
+        timeout=30.0,
+    )
+    if resp.is_error:
+        raise httpx.HTTPStatusError(
+            f"{resp.status_code} em POST /chats/{chat_id}/route: {resp.text[:300]}",
+            request=resp.request,
+            response=resp,
+        )
+    m = _EMBEDDED_ERROR.match(resp.text)
+    if m:
+        raise RuntimeError(f"Omni respondeu erro {m.group(1)} em POST /chats/{chat_id}/route: {m.group(2)[:300]}")
 
 
 def chat_conversation_url(chat: dict) -> Optional[str]:

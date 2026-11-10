@@ -179,12 +179,26 @@ Omni campaign mapped in `CADENCE_STAGE_CAMPAIGNS` (stage_id:campaign_id) for the
   "explicit deny". `omni_client._json` turns this into `OmniAuthError` (it used to surface as
   `Extra data: line 1 column 5`). In the cadence an auth refusal deletes the `enviando` row
   (nothing was sent) and stops the run, so the deal is retried once the key works again.
-- **Open (2026-11-05, client feedback):** the customer's reply to a cadence message goes to the
-  number's default bot ("Mobi" / "[PT] Bot LATAM – SALES E MKT") and is distributed at random.
-  The client wants it in the Omni wallet ("carteira") of the RD deal owner. Idea: before sending,
-  set the Omni customer's `salesPerson` to the owner's Omni user (customer-services.omni.chat
-  `PUT /v1/customers/{objectId}`), then check whether the bot respects the wallet. Omni routing
-  rules (`/rules`) can target a campaign but send everyone to one fixed user/team/bot.
+- **Wallet ("carteira") routing (added 2026-11-09, NOT yet verified in production):** the
+  customer's reply to a cadence message used to go to the number's default bot ("Mobi" / "[PT] Bot
+  LATAM – SALES E MKT") and be distributed at random; the client (Fran, audios 04 and 09/11) wants
+  it with the RD deal owner. After each successful dispatch, `cadence.route_to_owner` takes the
+  chat id from `GET /dispatches/{id}` (`chat.id`) and calls `POST api.omni.chat/v1/chats/{id}/route`
+  `{"type":"USER","userId":...}` (documented in `api-docs.omni.chat/swagger-omnichat-api.yaml`).
+  Owner → Omni user: same email (`GET /users?email=` is case-sensitive; we load all users, paged by
+  `createdAt.gt`, skipping `disabled` and bot emails), else same name (first+last, unique). On
+  2026-11-09, 12 of the 17 owners in T1/T3/T4 matched (11 by email, Aline Aldrighi by name); the
+  other 5 (Pedro Venancio, Sandro Breda, Ricardo Glaeser, Mayara Santos, Anderson Cardoso) have
+  no active Omni user, so their chats stay with the bot. Routing failures never fail the send;
+  the outcome is appended to `cadence_sends.detail` ("<dispatch_id> | carteira: <name or reason>").
+  Off with `CADENCE_ROUTE_TO_OWNER=false`. Test: `POST /cadence/test?...&owner_email=<omni email>`.
+  Still to confirm: that the bot does not take the chat back when the customer replies.
+- T1→T2 movement and the T2 call task are the client's RD automation, not this service. Clients
+  reported (2026-11-05..09) deals not moving T1→T2 and T2 tasks not being created; the client's
+  rule (Fran, 09/11): task created **on entering** T2, the seller has 3 days.
+- 2026-11-09: production was still on the pre-`f32c6e4` code (old campaign 1eAsZ7CFZ9), so 22
+  T1 rows that day are `enviado` but every dispatch was `CHANNEL_USER_NOT_FOUND` — nothing
+  reached the customers. Delete those rows after deploying so they get T1.
 - Deals already in T1/T3/T4 at activation are `linha_de_base` (193 T1, 49 T3, 76 T4) and never
   get the message; moving a deal out and back into the same stage does not resend either.
 

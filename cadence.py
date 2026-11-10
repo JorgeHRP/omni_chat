@@ -47,9 +47,52 @@ def _is_active(deal: dict) -> bool:
     return deal.get("win") is None and not deal.get("closed_at") and not deal.get("hold")
 
 
-async def send_one(client: httpx.AsyncClient, campaign_id: str, phone: str, consultor: str) -> str:
-    """Dispara a campanha pra um telefone (usado tambem no teste manual)."""
+async def send_one(
+    client: httpx.AsyncClient, campaign_id: str, phone: str, consultor: str
+) -> tuple[str, Optional[str]]:
+    """Dispara a campanha pra um telefone (usado tambem no teste manual).
+    Devolve (dispatch_id, chat_id)."""
     return await omni_client.dispatch_campaign(client, campaign_id, phone, consultor)
+
+
+def find_omni_owner(owner: dict, omni_users: list[dict]) -> Optional[dict]:
+    """Atendente do Omni que corresponde ao dono da negociacao no RD: mesmo
+    email, senao mesmo nome (exato ou primeiro + ultimo, so se for unico) -
+    alguns emails sao diferentes nos dois sistemas."""
+    email = (owner.get("email") or "").strip().lower()
+    if email:
+        for u in omni_users:
+            if (u.get("email") or "").strip().lower() == email:
+                return u
+    by_name: dict[str, str] = {}
+    for u in omni_users:
+        full = " ".join(filter(None, [u.get("name"), u.get("lastName")]))
+        if full:
+            by_name.setdefault(rdcrm_client.norm_text(full), u["objectId"])
+    uid = rdcrm_client.match_user_by_name(owner.get("name") or "", by_name)
+    return next((u for u in omni_users if u["objectId"] == uid), None) if uid else None
+
+
+async def route_to_owner(
+    client: httpx.AsyncClient, chat_id: Optional[str], owner: dict, omni_users: list[dict]
+) -> str:
+    """Passa a conversa pra carteira do dono. Nunca levanta erro: a mensagem
+    ja saiu, falhar aqui so e registrado (texto devolvido vai pro detail)."""
+    who = owner.get("name") or owner.get("email") or "?"
+    if not chat_id:
+        logger.warning("Cadencia: Omni nao informou a conversa - nao deu pra passar pra carteira de %s.", who)
+        return "carteira: conversa desconhecida"
+    target = find_omni_owner(owner, omni_users)
+    if not target:
+        logger.warning("Cadencia: dono %s (%s) nao encontrado no Omni - conversa %s fica sem carteira.", who, owner.get("email"), chat_id)
+        return f"carteira: {who} nao encontrado no Omni"
+    try:
+        await omni_client.route_chat_to_user(client, chat_id, target["objectId"])
+    except Exception as exc:  # noqa: BLE001 - a mensagem ja foi; so registra
+        logger.exception("Cadencia: erro passando a conversa %s pra %s.", chat_id, target.get("name"))
+        return f"carteira: erro ({str(exc)[:150]})"
+    logger.info("Cadencia: conversa %s passada pra carteira de %s.", chat_id, target.get("name"))
+    return f"carteira: {target.get('name')}"
 
 
 async def run_cadence() -> dict:
@@ -60,6 +103,7 @@ async def run_cadence() -> dict:
     try:
         async with httpx.AsyncClient() as client:
             sends_left = config.CADENCE_MAX_SENDS_PER_RUN
+            omni_users: Optional[list[dict]] = None  # carregado no 1o envio
 
             for stage_id, campaign_id in config.CADENCE_STAGE_CAMPAIGNS.items():
                 deals = [d for d in await rdcrm_client.fetch_deals_in_stage(client, stage_id) if _is_active(d)]
@@ -91,8 +135,13 @@ async def run_cadence() -> dict:
                     # "enviando" e nunca reenvia (melhor perder do que duplicar).
                     db.mark_cadence(deal_id, stage_id, name, phone, "enviando", None, _now())
                     try:
-                        dispatch_id = await omni_client.dispatch_campaign(client, campaign_id, phone, _owner_name(deal))
-                        db.mark_cadence(deal_id, stage_id, name, phone, "enviado", dispatch_id, _now())
+                        dispatch_id, chat_id = await omni_client.dispatch_campaign(client, campaign_id, phone, _owner_name(deal))
+                        detail = dispatch_id
+                        if config.CADENCE_ROUTE_TO_OWNER:
+                            if omni_users is None:
+                                omni_users = await omni_client.fetch_users(client)
+                            detail = f"{dispatch_id} | {await route_to_owner(client, chat_id, deal.get('user') or {}, omni_users)}"
+                        db.mark_cadence(deal_id, stage_id, name, phone, "enviado", detail, _now())
                         stats["enviados"] += 1
                         logger.info("Cadencia: campanha %s disparada pra %s (%s, negociacao %s, dispatch %s).", campaign_id, name, phone, deal_id, dispatch_id)
                     except omni_client.OmniAuthError as exc:

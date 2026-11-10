@@ -151,6 +151,22 @@ Liga com `CADENCE_WHATSAPP_ENABLED=true`. Teste antes no seu numero:
 `curl -X POST "localhost:8000/cadence/test?step=T1&phone=55DDDNUMERO"`.
 Resultado dos envios: `GET /cadence/sends`.
 
+Depois de cada envio a conversa e passada pra **carteira do dono da negociacao**
+no Omni (usuario com o mesmo email, senao o mesmo nome), pra resposta do cliente
+nao cair no bot e ser distribuida aleatoriamente. Dono sem usuario ativo no Omni
+-> conversa fica como antes. O resultado aparece no `detail` de
+`/cadence/sends` ("carteira: Nome"). Desliga com `CADENCE_ROUTE_TO_OWNER=false`.
+Teste: `.../cadence/test?step=T1&phone=55DDDNUMERO&owner_email=email@do.omni`.
+
+**Se a chave do Omni for trocada, as campanhas tem que ser recriadas** (cada
+campanha fica presa ao usuario da chave que a criou) - ver CLAUDE.md.
+
+### Persistencia
+
+Em producao o estado fica no Supabase (tabelas `omnichat_*`, ver
+`supabase_schema.sql`), ativado por `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
+Sem essas variaveis cai no SQLite em `data/` (bom pra rodar local).
+
 ## O que ainda falta antes de considerar 100% pronto
 
 1. `create_deal` cria negociacao REAL no RD CRM de producao - ja usado em
