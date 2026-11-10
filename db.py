@@ -158,6 +158,16 @@ def mark_cadence(
         )
 
 
+def pending_cadence_routes(since: str) -> list[dict]:
+    """Envios desde `since` cuja conversa ainda nao foi pra carteira do dono."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM cadence_sends WHERE action = 'enviado' AND detail LIKE '%carteira pendente%' AND created_at >= ?",
+            (since,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def delete_cadence(deal_id: str, stage_id: str) -> None:
     with get_connection() as conn:
         conn.execute(

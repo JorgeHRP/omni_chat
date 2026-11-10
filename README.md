@@ -151,9 +151,9 @@ Liga com `CADENCE_WHATSAPP_ENABLED=true`. Teste antes no seu numero:
 `curl -X POST "localhost:8000/cadence/test?step=T1&phone=55DDDNUMERO"`.
 Resultado dos envios: `GET /cadence/sends`.
 
-Depois de cada envio a conversa e passada pra **carteira do dono da negociacao**
-no Omni (usuario com o mesmo email, senao o mesmo nome), pra resposta do cliente
-nao cair no bot e ser distribuida aleatoriamente. Dono sem usuario ativo no Omni
+Quando o cliente responde, a conversa e passada pra **carteira do dono da negociacao**
+no Omni em ate ~1 min (usuario com o mesmo email, senao o mesmo nome), pra ela
+nao ficar no bot e ser distribuida aleatoriamente. Dono sem usuario ativo no Omni
 -> conversa fica como antes. O resultado aparece no `detail` de
 `/cadence/sends` ("carteira: Nome"). Desliga com `CADENCE_ROUTE_TO_OWNER=false`.
 Teste: `.../cadence/test?step=T1&phone=55DDDNUMERO&owner_email=email@do.omni`.

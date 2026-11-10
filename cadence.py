@@ -17,8 +17,10 @@ estavam em cada etapa sao gravadas como `linha_de_base` sem mandar nada - so
 quem entrar na etapa depois recebe a mensagem. Sem isso, ligar o envio
 disparava de uma vez pra centenas de negociacoes antigas."""
 
+import asyncio
 import logging
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -73,26 +75,98 @@ def find_omni_owner(owner: dict, omni_users: list[dict]) -> Optional[dict]:
     return next((u for u in omni_users if u["objectId"] == uid), None) if uid else None
 
 
-async def route_to_owner(
-    client: httpx.AsyncClient, chat_id: Optional[str], owner: dict, omni_users: list[dict]
-) -> str:
-    """Passa a conversa pra carteira do dono. Nunca levanta erro: a mensagem
-    ja saiu, falhar aqui so e registrado (texto devolvido vai pro detail)."""
+def owner_route_note(chat_id: Optional[str], owner: dict, omni_users: list[dict]) -> str:
+    """Texto que vai no `detail` do envio dizendo pra quem a conversa deve ir.
+
+    O Omni so deixa rotear uma conversa com atendimento aberto ("Cannot route
+    a chat without customer support request", visto 10/11/2026) - logo apos o
+    envio ainda nao tem. Entao aqui so marca "carteira pendente" e
+    `run_owner_routing` passa a conversa quando o cliente responder. (Gravar
+    o salesPerson no cadastro do cliente tambem nao da: PUT /customers
+    responde 200 e ignora o valor.)"""
     who = owner.get("name") or owner.get("email") or "?"
     if not chat_id:
-        logger.warning("Cadencia: Omni nao informou a conversa - nao deu pra passar pra carteira de %s.", who)
+        logger.warning("Cadencia: Omni nao informou a conversa - nao da pra passar pra carteira de %s.", who)
         return "carteira: conversa desconhecida"
     target = find_omni_owner(owner, omni_users)
     if not target:
-        logger.warning("Cadencia: dono %s (%s) nao encontrado no Omni - conversa %s fica sem carteira.", who, owner.get("email"), chat_id)
-        return f"carteira: {who} nao encontrado no Omni"
-    try:
-        await omni_client.route_chat_to_user(client, chat_id, target["objectId"])
-    except Exception as exc:  # noqa: BLE001 - a mensagem ja foi; so registra
-        logger.exception("Cadencia: erro passando a conversa %s pra %s.", chat_id, target.get("name"))
-        return f"carteira: erro ({str(exc)[:150]})"
-    logger.info("Cadencia: conversa %s passada pra carteira de %s.", chat_id, target.get("name"))
-    return f"carteira: {target.get('name')}"
+        logger.warning("Cadencia: dono %s (%s) sem usuario ativo no Omni - conversa %s fica sem carteira.", who, owner.get("email"), chat_id)
+        return f"carteira: {who} sem usuario ativo no Omni"
+    return f"carteira pendente: {target.get('name')} | chat={chat_id} | dono={target['objectId']}"
+
+
+_PENDING = re.compile(r"carteira pendente: (?P<name>.*?) \| chat=(?P<chat>\w+) \| dono=(?P<uid>\w+)")
+_route_lock = asyncio.Lock()
+_routes_checked_at: Optional[str] = None
+
+
+def _omni_ts(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+
+
+async def run_owner_routing() -> dict:
+    """Roda a cada minuto: olha as conversas do Omni atualizadas desde a
+    ultima vez e, se alguma e de um envio com "carteira pendente" e ja tem
+    atendimento aberto (o cliente respondeu e o bot assumiu), passa pro dono
+    da negociacao (POST /chats/{id}/route). Falhou -> fica pendente e tenta
+    de novo na proxima atualizacao da conversa."""
+    global _routes_checked_at
+    if not (config.CADENCE_WHATSAPP_ENABLED and config.CADENCE_ROUTE_TO_OWNER):
+        return {"desligado": True}
+    if _route_lock.locked():
+        return {"skipped": "ja em execucao"}
+    stats = {"pendentes": 0, "roteadas": 0, "erros": 0}
+    async with _route_lock:
+        now = datetime.now(timezone.utc)
+        try:
+            since = (now - timedelta(days=config.CADENCE_ROUTE_WINDOW_DAYS)).isoformat()
+            pending: dict[str, tuple[dict, re.Match]] = {}
+            for row in db.pending_cadence_routes(since):
+                m = _PENDING.search(row.get("detail") or "")
+                if m:
+                    pending[m["chat"]] = (row, m)
+            stats["pendentes"] = len(pending)
+            # Primeira vez depois de subir: olha a ultima hora.
+            cursor = _routes_checked_at or _omni_ts(now - timedelta(hours=1))
+            if not pending:
+                _routes_checked_at = _omni_ts(now)
+                return stats
+            async with httpx.AsyncClient() as client:
+                for _ in range(10):
+                    page = await omni_client.fetch_chats_page(client, cursor)
+                    for chat in page:
+                        hit = pending.pop(chat.get("objectId"), None)
+                        if hit and chat.get("customerSupportRequest"):
+                            await _route_pending(client, chat, *hit, stats)
+                    if page:
+                        cursor = max(c["updatedAt"] for c in page)
+                    if len(page) < 100:
+                        break
+            _routes_checked_at = cursor
+        except Exception as exc:  # noqa: BLE001 - nao pode derrubar o scheduler
+            stats["erro_geral"] = str(exc)[:300]
+            logger.exception("Erro passando conversas da cadencia pra carteira")
+    return stats
+
+
+async def _route_pending(client: httpx.AsyncClient, chat: dict, row: dict, m: re.Match, stats: dict) -> None:
+    chat_id, uid, name = m["chat"], m["uid"], m["name"]
+    if (chat.get("user") or {}).get("objectId") == uid:
+        done = f"carteira: {name} (ja estava com ele)"
+    else:
+        try:
+            await omni_client.route_chat_to_user(client, chat_id, uid)
+        except Exception:  # noqa: BLE001 - tenta de novo na proxima atualizacao
+            stats["erros"] += 1
+            logger.exception("Cadencia: erro passando a conversa %s pra %s.", chat_id, name)
+            return
+        done = f"carteira: {name}"
+        logger.info("Cadencia: conversa %s (%s) passada pra carteira de %s.", chat_id, row.get("deal_name"), name)
+    stats["roteadas"] += 1
+    db.mark_cadence(
+        row["deal_id"], row["stage_id"], row.get("deal_name"), row.get("phone"),
+        row["action"], (row.get("detail") or "").replace(m.group(0), done), row["created_at"],
+    )
 
 
 async def run_cadence() -> dict:
@@ -140,7 +214,7 @@ async def run_cadence() -> dict:
                         if config.CADENCE_ROUTE_TO_OWNER:
                             if omni_users is None:
                                 omni_users = await omni_client.fetch_users(client)
-                            detail = f"{dispatch_id} | {await route_to_owner(client, chat_id, deal.get('user') or {}, omni_users)}"
+                            detail = f"{dispatch_id} | {owner_route_note(chat_id, deal.get('user') or {}, omni_users)}"
                         db.mark_cadence(deal_id, stage_id, name, phone, "enviado", detail, _now())
                         stats["enviados"] += 1
                         logger.info("Cadencia: campanha %s disparada pra %s (%s, negociacao %s, dispatch %s).", campaign_id, name, phone, deal_id, dispatch_id)

@@ -36,6 +36,8 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     db.init_db()
     scheduler.add_job(run_poll, "interval", minutes=config.POLL_INTERVAL_MINUTES, id="poll_job")
+    # Passa pra carteira do dono as conversas da cadencia em que o cliente respondeu.
+    scheduler.add_job(cadence.run_owner_routing, "interval", minutes=1, id="route_job")
     scheduler.start()
     logger.info("Scheduler iniciado - rodando a cada %s minutos.", config.POLL_INTERVAL_MINUTES)
     yield
@@ -90,8 +92,12 @@ async def cadence_test(step: str, phone: str, consultor: str = "Teste", owner_em
             dispatch_id, chat_id = await cadence.send_one(client, campaign_id, phone, consultor)
             result = {"dispatch_id": dispatch_id, "campanha": campaign_id, "conversa": chat_id}
             if owner_email:
+                # Grava como um envio de verdade (etapa "teste") pra rotina de
+                # carteira passar a conversa quando o numero responder.
                 users = await omni_client.fetch_users(client)
-                result["carteira"] = await cadence.route_to_owner(client, chat_id, {"email": owner_email}, users)
+                note = cadence.owner_route_note(chat_id, {"email": owner_email}, users)
+                db.mark_cadence(f"teste-{dispatch_id}", "teste", f"teste {phone}", phone, "enviado", f"{dispatch_id} | {note}", cadence._now())
+                result["carteira"] = note
             return result
     except (httpx.HTTPError, omni_client.OmniAuthError, omni_client.DispatchError) as exc:
         # 400, nao 502: o EasyPanel troca qualquer 502 pela pagina

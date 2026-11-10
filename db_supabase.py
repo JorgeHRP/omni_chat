@@ -144,6 +144,17 @@ def is_cadence_stage_seeded(stage_id: str) -> bool:
     return bool(_get("omnichat_cadence_stages_seeded", select="stage_id", stage_id=f"eq.{stage_id}"))
 
 
+def pending_cadence_routes(since: str) -> list[dict]:
+    return _get(
+        "omnichat_cadence_sends",
+        select="*",
+        action="eq.enviado",
+        detail="like.*carteira pendente*",
+        created_at=f"gte.{since}",
+        limit=_PAGE,
+    )
+
+
 def delete_cadence(deal_id: str, stage_id: str) -> None:
     _check(
         _client.delete(

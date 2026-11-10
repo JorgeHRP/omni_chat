@@ -73,6 +73,9 @@ CADENCE_STAGE_CAMPAIGNS = dict(
 # negociacao no RD (carteira dele), pra resposta do cliente nao cair no bot
 # e ser distribuida aleatoriamente (pedido do cliente, 04 e 09/11/2026).
 CADENCE_ROUTE_TO_OWNER = os.environ.get("CADENCE_ROUTE_TO_OWNER", "true").lower() == "true"
+# Ate quantos dias depois do envio ainda passa a conversa pro dono se o
+# cliente responder.
+CADENCE_ROUTE_WINDOW_DAYS = int(os.environ.get("CADENCE_ROUTE_WINDOW_DAYS", "7"))
 # Trava de seguranca: no maximo N envios por execucao.
 CADENCE_MAX_SENDS_PER_RUN = int(os.environ.get("CADENCE_MAX_SENDS_PER_RUN", "50"))
 
